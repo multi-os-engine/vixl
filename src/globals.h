@@ -28,7 +28,9 @@
 #define VIXL_GLOBALS_H
 
 // Get the standard printf format macros for C99 stdint types.
+#ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
+#endif
 #include <inttypes.h>
 
 #include <assert.h>
@@ -39,6 +41,12 @@
 #include <stddef.h>
 #include "platform.h"
 
+#ifdef __ANDROID__
+#ifndef LOG_TAG
+#define LOG_TAG "VIXL"
+#endif
+#include <cutils/log.h>
+#endif
 
 typedef uint8_t byte;
 
@@ -46,12 +54,22 @@ const int KBytes = 1024;
 const int MBytes = 1024 * KBytes;
 const int GBytes = 1024 * MBytes;
 
+#ifdef __ANDROID__
+  #define ABORT() ALOGE("in %s, line %i", __FILE__, __LINE__); abort()
+#else
   #define ABORT() printf("in %s, line %i", __FILE__, __LINE__); abort()
+#endif
+
 #ifdef DEBUG
   #define ASSERT(condition) assert(condition)
   #define CHECK(condition) ASSERT(condition)
+#ifdef __ANDROID__
+  #define UNIMPLEMENTED() ALOGD("UNIMPLEMENTED @%s:%d\t", __FILE__, __LINE__); ABORT()
+  #define UNREACHABLE() printf("UNREACHABLE @%s:%d\t", __FILE__, __LINE__); ABORT()
+#else
   #define UNIMPLEMENTED() printf("UNIMPLEMENTED\t"); ABORT()
   #define UNREACHABLE() printf("UNREACHABLE\t"); ABORT()
+#endif
 #else
   #define ASSERT(condition) ((void) 0)
   #define CHECK(condition) assert(condition)

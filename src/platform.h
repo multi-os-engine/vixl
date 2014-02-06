@@ -30,7 +30,7 @@
 // Define platform specific functionalities.
 
 namespace vixl {
-#ifdef USE_SIMULATOR
+#if defined(USE_SIMULATOR)
 // Currently we assume running the simulator implies running on x86 hardware.
 inline void HostBreakpoint() { asm("int3"); }
 #else
