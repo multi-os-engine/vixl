@@ -7,11 +7,16 @@ vixl_src_files := \
 		src/a64/disasm-a64.cc \
 		src/a64/assembler-a64.cc \
 		src/a64/instructions-a64.cc \
-		src/a64/debugger-a64.cc \
 		src/a64/macro-assembler-a64.cc \
 		src/a64/decoder-a64.cc \
+
+# VIXL simulator only works on 64bit platforms
+ifeq ($(TARGET_IS_64_BIT), true)
+vixl_src_files += \
 		src/a64/simulator-a64.cc \
-		src/a64/instrument-a64.cc
+		src/a64/instrument-a64.cc \
+		src/a64/debugger-a64.cc
+endif
 
 include $(CLEAR_VARS)
 LOCAL_CPP_EXTENSION := .cc

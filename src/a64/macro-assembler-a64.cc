@@ -1158,6 +1158,7 @@ void MacroAssembler::Printf(const char * format,
   PopCPURegList(kCallerSaved);
 }
 
+#ifdef __LP64__
 void MacroAssembler::Trace(TraceParameters parameters, TraceCommand command) {
   ASSERT(allow_macro_instructions_);
 
@@ -1234,5 +1235,6 @@ void MacroAssembler::AnnotateInstrumentation(const char* marker_name) {
   InstructionAccurateScope scope(this, 1);
   movn(xzr, (marker_name[1] << 8) | marker_name[0]);
 }
+#endif
 
 }  // namespace vixl

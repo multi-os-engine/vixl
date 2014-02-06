@@ -1553,16 +1553,16 @@ void Assembler::MoveWide(const Register& rd,
     // Calculate a new immediate and shift combination to encode the immediate
     // argument.
     shift = 0;
-    if ((imm & ~0xffffUL) == 0) {
+    if ((imm & ~(UINT64_C(0xffff))) == 0) {
       // Nothing to do.
-    } else if ((imm & ~(0xffffUL << 16)) == 0) {
+    } else if ((imm & ~(UINT64_C(0xffff) << 16)) == 0) {
       imm >>= 16;
       shift = 1;
-    } else if ((imm & ~(0xffffUL << 32)) == 0) {
+    } else if ((imm & ~(UINT64_C(0xffff) << 32)) == 0) {
       ASSERT(rd.Is64Bits());
       imm >>= 32;
       shift = 2;
-    } else if ((imm & ~(0xffffUL << 48)) == 0) {
+    } else if ((imm & ~(UINT64_C(0xffff) << 48)) == 0) {
       ASSERT(rd.Is64Bits());
       imm >>= 48;
       shift = 3;

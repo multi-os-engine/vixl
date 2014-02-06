@@ -29,7 +29,9 @@
 
 #include "globals.h"
 #include "a64/assembler-a64.h"
+#ifdef __LP64__
 #include "a64/debugger-a64.h"
+#endif
 
 
 #define LS_MACRO_LIST(V)                                      \
@@ -1135,6 +1137,7 @@ class MacroAssembler : public Assembler {
                         const CPURegister& arg2 = NoCPUReg,
                         const CPURegister& arg3 = NoCPUReg);
 
+#ifdef __LP64__
   // Trace control when running the debug simulator.
   //
   // For example:
@@ -1164,6 +1167,7 @@ class MacroAssembler : public Assembler {
   // The name is a two character string that will be attached to the marker in
   // the output data.
   void AnnotateInstrumentation(const char* marker_name);
+#endif
 
  private:
   // The actual Push and Pop implementations. These don't generate any code

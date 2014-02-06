@@ -27,6 +27,11 @@
 #ifndef VIXL_GLOBALS_H
 #define VIXL_GLOBALS_H
 
+#ifndef __STDC_CONSTANT_MACROS
+#define __STDC_CONSTANT_MACROS
+#endif
+#include <stdint.h>
+
 // Get the standard printf format macros for C99 stdint types.
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
@@ -36,7 +41,6 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include "platform.h"
