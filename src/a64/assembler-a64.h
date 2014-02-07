@@ -29,8 +29,8 @@
 
 #include <list>
 
-#include "globals.h"
-#include "utils.h"
+#include "globals-vixl.h"
+#include "utils-vixl.h"
 #include "a64/instructions-a64.h"
 
 namespace vixl {

@@ -27,7 +27,7 @@
 #ifndef VIXL_CPU_A64_H
 #define VIXL_CPU_A64_H
 
-#include "globals.h"
+#include "globals-vixl.h"
 
 namespace vixl {
 

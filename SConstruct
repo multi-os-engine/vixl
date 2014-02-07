@@ -31,7 +31,7 @@ import sys
 # Global configuration.
 PROJ_SRC_DIR   = 'src'
 PROJ_SRC_FILES = '''
-src/utils.cc
+src/utils-vixl.cc
 src/a64/assembler-a64.cc
 src/a64/macro-assembler-a64.cc
 src/a64/instructions-a64.cc

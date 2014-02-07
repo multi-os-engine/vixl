@@ -3,7 +3,7 @@ LOCAL_PATH:= $(call my-dir)
 vixl_include_files := $(LOCAL_PATH)/src/ \
 
 vixl_src_files := \
-		src/utils.cc \
+		src/utils-vixl.cc \
 		src/a64/disasm-a64.cc \
 		src/a64/assembler-a64.cc \
 		src/a64/instructions-a64.cc \

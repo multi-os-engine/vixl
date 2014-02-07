@@ -27,7 +27,7 @@
 #ifndef VIXL_A64_MACRO_ASSEMBLER_A64_H_
 #define VIXL_A64_MACRO_ASSEMBLER_A64_H_
 
-#include "globals.h"
+#include "globals-vixl.h"
 #include "a64/assembler-a64.h"
 #ifdef __LP64__
 #include "a64/debugger-a64.h"

@@ -29,7 +29,7 @@
 
 #include <math.h>
 #include <string.h>
-#include "globals.h"
+#include "globals-vixl.h"
 
 namespace vixl {
 
