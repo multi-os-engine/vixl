@@ -51,7 +51,7 @@ vixl::Cctest::Cctest(const char* name, CctestFunction* callback)
   : name_(name), callback_(callback), next_(NULL) {
   // Append this cctest to the linked list.
   if (first_ == NULL) {
-    ASSERT(last_ == NULL);
+    VIXL_ASSERT(last_ == NULL);
     first_ = this;
   } else {
     last_->next_ = this;

@@ -1556,7 +1556,7 @@ TEST(unreachable) {
   SETUP_CLASS(MacroAssembler);
 
 #ifdef USE_SIMULATOR
-  ASSERT(kUnreachableOpcode == 0xdeb0);
+  VIXL_ASSERT(kUnreachableOpcode == 0xdeb0);
   COMPARE(Unreachable(), "hlt #0xdeb0");
 #else
   COMPARE(Unreachable(), "blr xzr");
@@ -1570,7 +1570,7 @@ TEST(unreachable) {
 TEST(trace) {
   SETUP_CLASS(MacroAssembler);
 
-  ASSERT(kTraceOpcode == 0xdeb2);
+  VIXL_ASSERT(kTraceOpcode == 0xdeb2);
 
   // All Trace calls should produce the same instruction.
   COMPARE(Trace(LOG_ALL, TRACE_ENABLE), "hlt #0xdeb2");
@@ -1585,7 +1585,7 @@ TEST(trace) {
 TEST(log) {
   SETUP_CLASS(MacroAssembler);
 
-  ASSERT(kLogOpcode == 0xdeb3);
+  VIXL_ASSERT(kLogOpcode == 0xdeb3);
 
   // All Log calls should produce the same instruction.
   COMPARE(Log(LOG_ALL), "hlt #0xdeb3");

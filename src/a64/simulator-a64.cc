@@ -33,11 +33,11 @@ const Instruction* Simulator::kEndOfSimAddress = NULL;
 
 void SimSystemRegister::SetBits(int msb, int lsb, uint32_t bits) {
   int width = msb - lsb + 1;
-  ASSERT(is_uintn(width, bits) || is_intn(width, bits));
+  VIXL_ASSERT(is_uintn(width, bits) || is_intn(width, bits));
 
   bits <<= lsb;
   uint32_t mask = ((1 << width) - 1) << lsb;
-  ASSERT((mask & write_ignore_mask_) == 0);
+  VIXL_ASSERT((mask & write_ignore_mask_) == 0);
 
   value_ = (value_ & ~mask) | (bits & mask);
 }
@@ -50,7 +50,7 @@ SimSystemRegister SimSystemRegister::DefaultValueFor(SystemRegister id) {
     case FPCR:
       return SimSystemRegister(0x00000000, FPCRWriteIgnoreMask);
     default:
-      UNREACHABLE();
+      VIXL_UNREACHABLE();
       return SimSystemRegister();
   }
 }
@@ -58,8 +58,8 @@ SimSystemRegister SimSystemRegister::DefaultValueFor(SystemRegister id) {
 
 Simulator::Simulator(Decoder* decoder, FILE* stream) {
   // Ensure that shift operations act as the simulator expects.
-  ASSERT((static_cast<int32_t>(-1) >> 1) == -1);
-  ASSERT((static_cast<uint32_t>(-1) >> 1) == 0x7FFFFFFF);
+  VIXL_ASSERT((static_cast<int32_t>(-1) >> 1) == -1);
+  VIXL_ASSERT((static_cast<uint32_t>(-1) >> 1) == 0x7FFFFFFF);
 
   // Set up the decoder.
   decoder_ = decoder;
@@ -168,7 +168,7 @@ const char* Simulator::vreg_names[] = {
 
 
 const char* Simulator::WRegNameForCode(unsigned code, Reg31Mode mode) {
-  ASSERT(code < kNumberOfRegisters);
+  VIXL_ASSERT(code < kNumberOfRegisters);
   // If the code represents the stack pointer, index the name after zr.
   if ((code == kZeroRegCode) && (mode == Reg31IsStackPointer)) {
     code = kZeroRegCode + 1;
@@ -178,7 +178,7 @@ const char* Simulator::WRegNameForCode(unsigned code, Reg31Mode mode) {
 
 
 const char* Simulator::XRegNameForCode(unsigned code, Reg31Mode mode) {
-  ASSERT(code < kNumberOfRegisters);
+  VIXL_ASSERT(code < kNumberOfRegisters);
   // If the code represents the stack pointer, index the name after zr.
   if ((code == kZeroRegCode) && (mode == Reg31IsStackPointer)) {
     code = kZeroRegCode + 1;
@@ -188,19 +188,19 @@ const char* Simulator::XRegNameForCode(unsigned code, Reg31Mode mode) {
 
 
 const char* Simulator::SRegNameForCode(unsigned code) {
-  ASSERT(code < kNumberOfFPRegisters);
+  VIXL_ASSERT(code < kNumberOfFPRegisters);
   return sreg_names[code];
 }
 
 
 const char* Simulator::DRegNameForCode(unsigned code) {
-  ASSERT(code < kNumberOfFPRegisters);
+  VIXL_ASSERT(code < kNumberOfFPRegisters);
   return dreg_names[code];
 }
 
 
 const char* Simulator::VRegNameForCode(unsigned code) {
-  ASSERT(code < kNumberOfFPRegisters);
+  VIXL_ASSERT(code < kNumberOfFPRegisters);
   return vreg_names[code];
 }
 
@@ -211,8 +211,8 @@ int64_t Simulator::AddWithCarry(unsigned reg_size,
                                 int64_t src1,
                                 int64_t src2,
                                 int64_t carry_in) {
-  ASSERT((carry_in == 0) || (carry_in == 1));
-  ASSERT((reg_size == kXRegSize) || (reg_size == kWRegSize));
+  VIXL_ASSERT((carry_in == 0) || (carry_in == 1));
+  VIXL_ASSERT((reg_size == kXRegSize) || (reg_size == kWRegSize));
 
   uint64_t u1, u2;
   int64_t result;
@@ -289,7 +289,7 @@ int64_t Simulator::ShiftOperand(unsigned reg_size,
              ((value & ((1L << amount) - 1L)) << (reg_size - amount));
     }
     default:
-      UNIMPLEMENTED();
+      VIXL_UNIMPLEMENTED();
       return 0;
   }
 }
@@ -322,7 +322,7 @@ int64_t Simulator::ExtendValue(unsigned reg_size,
     case SXTX:
       break;
     default:
-      UNREACHABLE();
+      VIXL_UNREACHABLE();
   }
   int64_t mask = (reg_size == kXRegSize) ? kXRegMask : kWRegMask;
   return (value << left_shift) & mask;
@@ -343,7 +343,7 @@ void Simulator::FPCompare(double val0, double val1) {
   } else if (val0 == val1) {
     nzcv().SetRawValue(FPEqualFlag);
   } else {
-    UNREACHABLE();
+    VIXL_UNREACHABLE();
   }
 }
 
@@ -375,7 +375,7 @@ void Simulator::PrintSystemRegisters(bool print_all) {
       "0b10 (Round towards Minus Infinity)",
       "0b11 (Round towards Zero)"
     };
-    ASSERT(fpcr().RMode() <= (sizeof(rmode) / sizeof(rmode[0])));
+    VIXL_ASSERT(fpcr().RMode() <= (sizeof(rmode) / sizeof(rmode[0])));
     fprintf(stream_, "# %sFPCR: %sAHP:%d DN:%d FZ:%d RMode:%s%s\n",
             clr_flag_name,
             clr_flag_value,
@@ -467,14 +467,14 @@ void Simulator::PrintProcessorState() {
 void Simulator::VisitUnimplemented(Instruction* instr) {
   printf("Unimplemented instruction at 0x%p: 0x%08" PRIx32 "\n",
          reinterpret_cast<void*>(instr), instr->InstructionBits());
-  UNIMPLEMENTED();
+  VIXL_UNIMPLEMENTED();
 }
 
 
 void Simulator::VisitUnallocated(Instruction* instr) {
   printf("Unallocated instruction at 0x%p: 0x%08" PRIx32 "\n",
          reinterpret_cast<void*>(instr), instr->InstructionBits());
-  UNIMPLEMENTED();
+  VIXL_UNIMPLEMENTED();
 }
 
 
@@ -486,10 +486,10 @@ void Simulator::VisitPCRelAddressing(Instruction* instr) {
               reinterpret_cast<int64_t>(instr->ImmPCOffsetTarget()));
       break;
     case ADRP:  // Not implemented in the assembler.
-      UNIMPLEMENTED();
+      VIXL_UNIMPLEMENTED();
       break;
     default:
-      UNREACHABLE();
+      VIXL_UNREACHABLE();
   }
 }
 
@@ -502,13 +502,13 @@ void Simulator::VisitUnconditionalBranch(Instruction* instr) {
     case B:
       set_pc(instr->ImmPCOffsetTarget());
       break;
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
 
 void Simulator::VisitConditionalBranch(Instruction* instr) {
-  ASSERT(instr->Mask(ConditionalBranchMask) == B_cond);
+  VIXL_ASSERT(instr->Mask(ConditionalBranchMask) == B_cond);
   if (ConditionPassed(static_cast<Condition>(instr->ConditionBranch()))) {
     set_pc(instr->ImmPCOffsetTarget());
   }
@@ -524,7 +524,7 @@ void Simulator::VisitUnconditionalBranchToRegister(Instruction* instr) {
       // Fall through.
     case BR:
     case RET: set_pc(target); break;
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
@@ -536,7 +536,7 @@ void Simulator::VisitTestBranch(Instruction* instr) {
   switch (instr->Mask(TestBranchMask)) {
     case TBZ: break;
     case TBNZ: take_branch = !take_branch; break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
   if (take_branch) {
     set_pc(instr->ImmPCOffsetTarget());
@@ -552,7 +552,7 @@ void Simulator::VisitCompareBranch(Instruction* instr) {
     case CBZ_x: take_branch = (xreg(rt) == 0); break;
     case CBNZ_w: take_branch = (wreg(rt) != 0); break;
     case CBNZ_x: take_branch = (xreg(rt) != 0); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
   if (take_branch) {
     set_pc(instr->ImmPCOffsetTarget());
@@ -584,7 +584,7 @@ void Simulator::AddSubHelper(Instruction* instr, int64_t op2) {
                              1);
       break;
     }
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 
   set_reg(reg_size, instr->Rd(), new_val, instr->RdMode());
@@ -668,7 +668,7 @@ void Simulator::LogicalHelper(Instruction* instr, int64_t op2) {
     case ORR: result = op1 | op2; break;
     case EOR: result = op1 ^ op2; break;
     default:
-      UNIMPLEMENTED();
+      VIXL_UNIMPLEMENTED();
   }
 
   if (update_flags) {
@@ -703,7 +703,7 @@ void Simulator::ConditionalCompareHelper(Instruction* instr, int64_t op2) {
     if (instr->Mask(ConditionalCompareMask) == CCMP) {
       AddWithCarry(reg_size, true, op1, ~op2, 1);
     } else {
-      ASSERT(instr->Mask(ConditionalCompareMask) == CCMN);
+      VIXL_ASSERT(instr->Mask(ConditionalCompareMask) == CCMN);
       AddWithCarry(reg_size, true, op1, op2, 0);
     }
   } else {
@@ -736,7 +736,7 @@ void Simulator::VisitLoadStorePostIndex(Instruction* instr) {
 
 void Simulator::VisitLoadStoreRegisterOffset(Instruction* instr) {
   Extend ext = static_cast<Extend>(instr->ExtendMode());
-  ASSERT((ext == UXTW) || (ext == UXTX) || (ext == SXTW) || (ext == SXTX));
+  VIXL_ASSERT((ext == UXTW) || (ext == UXTX) || (ext == SXTW) || (ext == SXTX));
   unsigned shift_amount = instr->ImmShiftLS() * instr->SizeLS();
 
   int64_t offset = ExtendValue(kXRegSize, xreg(instr->Rm()), ext,
@@ -786,7 +786,7 @@ void Simulator::LoadStoreHelper(Instruction* instr,
     case LDR_d: set_dreg(srcdst, MemoryReadFP64(address)); break;
     case STR_s: MemoryWriteFP32(address, sreg(srcdst)); break;
     case STR_d: MemoryWriteFP64(address, dreg(srcdst)); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -822,7 +822,7 @@ void Simulator::LoadStorePairHelper(Instruction* instr,
     static_cast<LoadStorePairOp>(instr->Mask(LoadStorePairMask));
 
   // 'rt' and 'rt2' can only be aliased for stores.
-  ASSERT(((op & LoadStorePairLBit) == 0) || (rt != rt2));
+  VIXL_ASSERT(((op & LoadStorePairLBit) == 0) || (rt != rt2));
 
   switch (op) {
     case LDP_w: {
@@ -871,7 +871,7 @@ void Simulator::LoadStorePairHelper(Instruction* instr,
       MemoryWriteFP64(address + kDRegSizeInBytes, dreg(rt2));
       break;
     }
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
@@ -885,7 +885,7 @@ void Simulator::VisitLoadLiteral(Instruction* instr) {
     case LDR_x_lit: set_xreg(rt, MemoryRead64(address));  break;
     case LDR_s_lit: set_sreg(rt, MemoryReadFP32(address));  break;
     case LDR_d_lit: set_dreg(rt, MemoryReadFP64(address));  break;
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
@@ -894,16 +894,16 @@ uint8_t* Simulator::AddressModeHelper(unsigned addr_reg,
                                       int64_t offset,
                                       AddrMode addrmode) {
   uint64_t address = xreg(addr_reg, Reg31IsStackPointer);
-  ASSERT((sizeof(uintptr_t) == kXRegSizeInBytes) ||
+  VIXL_ASSERT((sizeof(uintptr_t) == kXRegSizeInBytes) ||
          (address < 0x100000000UL));
   if ((addr_reg == 31) && ((address % 16) != 0)) {
     // When the base register is SP the stack pointer is required to be
     // quadword aligned prior to the address calculation and write-backs.
     // Misalignment will cause a stack alignment fault.
-    ALIGNMENT_EXCEPTION();
+    VIXL_ALIGNMENT_EXCEPTION();
   }
   if ((addrmode == PreIndex) || (addrmode == PostIndex)) {
-    ASSERT(offset != 0);
+    VIXL_ASSERT(offset != 0);
     set_xreg(addr_reg, address + offset, Reg31IsStackPointer);
   }
 
@@ -916,8 +916,8 @@ uint8_t* Simulator::AddressModeHelper(unsigned addr_reg,
 
 
 uint64_t Simulator::MemoryRead(const uint8_t* address, unsigned num_bytes) {
-  ASSERT(address != NULL);
-  ASSERT((num_bytes > 0) && (num_bytes <= sizeof(uint64_t)));
+  VIXL_ASSERT(address != NULL);
+  VIXL_ASSERT((num_bytes > 0) && (num_bytes <= sizeof(uint64_t)));
   uint64_t read = 0;
   memcpy(&read, address, num_bytes);
   return read;
@@ -957,8 +957,8 @@ double Simulator::MemoryReadFP64(uint8_t* address) {
 void Simulator::MemoryWrite(uint8_t* address,
                             uint64_t value,
                             unsigned num_bytes) {
-  ASSERT(address != NULL);
-  ASSERT((num_bytes > 0) && (num_bytes <= sizeof(uint64_t)));
+  VIXL_ASSERT(address != NULL);
+  VIXL_ASSERT((num_bytes > 0) && (num_bytes <= sizeof(uint64_t)));
   memcpy(address, &value, num_bytes);
 }
 
@@ -990,7 +990,7 @@ void Simulator::VisitMoveWideImmediate(Instruction* instr) {
 
   bool is_64_bits = instr->SixtyFourBits() == 1;
   // Shift is limited for W operations.
-  ASSERT(is_64_bits || (instr->ShiftMoveWide() < 2));
+  VIXL_ASSERT(is_64_bits || (instr->ShiftMoveWide() < 2));
 
   // Get the shifted immediate.
   int64_t shift = instr->ShiftMoveWide() * 16;
@@ -1018,7 +1018,7 @@ void Simulator::VisitMoveWideImmediate(Instruction* instr) {
       break;
     }
     default:
-      UNREACHABLE();
+      VIXL_UNREACHABLE();
   }
 
   // Update the destination register.
@@ -1040,7 +1040,7 @@ void Simulator::VisitConditionalSelect(Instruction* instr) {
       case CSINV_x: new_val = ~new_val; break;
       case CSNEG_w:
       case CSNEG_x: new_val = -new_val; break;
-      default: UNIMPLEMENTED();
+      default: VIXL_UNIMPLEMENTED();
     }
   }
   unsigned reg_size = instr->SixtyFourBits() ? kXRegSize : kWRegSize;
@@ -1070,13 +1070,13 @@ void Simulator::VisitDataProcessing1Source(Instruction* instr) {
       set_xreg(dst, CountLeadingSignBits(xreg(src), kXRegSize));
       break;
     }
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
 
 uint64_t Simulator::ReverseBits(uint64_t value, unsigned num_bits) {
-  ASSERT((num_bits == kWRegSize) || (num_bits == kXRegSize));
+  VIXL_ASSERT((num_bits == kWRegSize) || (num_bits == kXRegSize));
   uint64_t result = 0;
   for (unsigned i = 0; i < num_bits; i++) {
     result = (result << 1) | (value & 1);
@@ -1100,7 +1100,7 @@ uint64_t Simulator::ReverseBytes(uint64_t value, ReverseByteMode mode) {
   //  permute_table[Reverse16] is used by REV16_x, REV16_w
   //  permute_table[Reverse32] is used by REV32_x, REV_w
   //  permute_table[Reverse64] is used by REV_x
-  ASSERT((Reverse16 == 0) && (Reverse32 == 1) && (Reverse64 == 2));
+  VIXL_ASSERT((Reverse16 == 0) && (Reverse32 == 1) && (Reverse64 == 2));
   static const uint8_t permute_table[3][8] = { {6, 7, 4, 5, 2, 3, 0, 1},
                                                {4, 5, 6, 7, 0, 1, 2, 3},
                                                {0, 1, 2, 3, 4, 5, 6, 7} };
@@ -1173,7 +1173,7 @@ void Simulator::VisitDataProcessing2Source(Instruction* instr) {
     case ASRV_x: shift_op = ASR; break;
     case RORV_w:
     case RORV_x: shift_op = ROR; break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 
   unsigned reg_size = instr->SixtyFourBits() ? kXRegSize : kWRegSize;
@@ -1236,7 +1236,7 @@ void Simulator::VisitDataProcessing3Source(Instruction* instr) {
     case SMULH_x:
       result = MultiplyHighSigned(xreg(instr->Rn()), xreg(instr->Rm()));
       break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
   set_reg(reg_size, instr->Rd(), result);
 }
@@ -1277,7 +1277,7 @@ void Simulator::VisitBitfield(Instruction* instr) {
       inzero = true;
       break;
     default:
-      UNIMPLEMENTED();
+      VIXL_UNIMPLEMENTED();
   }
 
   int64_t dst = inzero ? 0 : reg(reg_size, instr->Rd());
@@ -1313,7 +1313,7 @@ void Simulator::VisitFPImmediate(Instruction* instr) {
   switch (instr->Mask(FPImmediateMask)) {
     case FMOV_s_imm: set_sreg(dest, instr->ImmFP32()); break;
     case FMOV_d_imm: set_dreg(dest, instr->ImmFP64()); break;
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
@@ -1397,7 +1397,7 @@ void Simulator::VisitFPIntegerConvert(Instruction* instr) {
       break;
     }
 
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
@@ -1442,7 +1442,7 @@ void Simulator::VisitFPFixedPointConvert(Instruction* instr) {
                UFixedToFloat(static_cast<uint32_t>(wreg(src)), fbits, round));
       break;
     }
-    default: UNREACHABLE();
+    default: VIXL_UNREACHABLE();
   }
 }
 
@@ -1502,7 +1502,7 @@ void Simulator::VisitFPCompare(Instruction* instr) {
     case FCMP_d: FPCompare(fn_val, fpreg(reg_size, instr->Rm())); break;
     case FCMP_s_zero:
     case FCMP_d_zero: FPCompare(fn_val, 0.0); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -1524,7 +1524,7 @@ void Simulator::VisitFPConditionalCompare(Instruction* instr) {
       }
       break;
     }
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -1542,7 +1542,7 @@ void Simulator::VisitFPConditionalSelect(Instruction* instr) {
   switch (instr->Mask(FPConditionalSelectMask)) {
     case FCSEL_s: set_sreg(instr->Rd(), sreg(selected)); break;
     case FCSEL_d: set_dreg(instr->Rd(), dreg(selected)); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -1570,7 +1570,7 @@ void Simulator::VisitFPDataProcessing1Source(Instruction* instr) {
     case FRINTZ_d: set_dreg(fd, FPRoundInt(dreg(fn), FPZero)); break;
     case FCVT_ds: set_dreg(fd, FPToDouble(sreg(fn))); break;
     case FCVT_sd: set_sreg(fd, FPToFloat(dreg(fn), FPTieEven)); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -1593,10 +1593,10 @@ void Simulator::VisitFPDataProcessing1Source(Instruction* instr) {
 template <class T, int ebits, int mbits>
 static T FPRound(int64_t sign, int64_t exponent, uint64_t mantissa,
                  FPRounding round_mode) {
-  ASSERT((sign == 0) || (sign == 1));
+  VIXL_ASSERT((sign == 0) || (sign == 1));
 
   // Only the FPTieEven rounding mode is implemented.
-  ASSERT(round_mode == FPTieEven);
+  VIXL_ASSERT(round_mode == FPTieEven);
   USE(round_mode);
 
   // Rounding can promote subnormals to normals, and normals to infinities. For
@@ -1653,7 +1653,7 @@ static T FPRound(int64_t sign, int64_t exponent, uint64_t mantissa,
   static const int mantissa_offset = 0;
   static const int exponent_offset = mantissa_offset + mbits;
   static const int sign_offset = exponent_offset + ebits;
-  ASSERT(sign_offset == (sizeof(T) * 8 - 1));
+  VIXL_ASSERT(sign_offset == (sizeof(T) * 8 - 1));
 
   // Bail out early for zero inputs.
   if (mantissa == 0) {
@@ -1856,7 +1856,7 @@ double Simulator::FPRoundInt(double value, FPRounding round_mode) {
       // We always use floor(value).
       break;
     }
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
   return int_result;
 }
@@ -1893,14 +1893,14 @@ double Simulator::FPToDouble(float value) {
     }
   }
 
-  UNREACHABLE();
+  VIXL_UNREACHABLE();
   return static_cast<double>(value);
 }
 
 
 float Simulator::FPToFloat(double value, FPRounding round_mode) {
   // Only the FPTieEven rounding mode is implemented.
-  ASSERT(round_mode == FPTieEven);
+  VIXL_ASSERT(round_mode == FPTieEven);
   USE(round_mode);
 
   switch (fpclassify(value)) {
@@ -1945,7 +1945,7 @@ float Simulator::FPToFloat(double value, FPRounding round_mode) {
     }
   }
 
-  UNREACHABLE();
+  VIXL_UNREACHABLE();
   return value;
 }
 
@@ -1974,7 +1974,7 @@ void Simulator::VisitFPDataProcessing2Source(Instruction* instr) {
     case FMAXNM_d: set_dreg(fd, FPMaxNM(dreg(fn), dreg(fm))); break;
     case FMINNM_s: set_sreg(fd, FPMinNM(sreg(fn), sreg(fm))); break;
     case FMINNM_d: set_dreg(fd, FPMinNM(dreg(fn), dreg(fm))); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -1999,7 +1999,7 @@ void Simulator::VisitFPDataProcessing3Source(Instruction* instr) {
     case FNMSUB_s: set_sreg(fd, -fmaf(-sreg(fn), sreg(fm), sreg(fa))); break;
     case FNMADD_d: set_dreg(fd, -fma(dreg(fn), dreg(fm), dreg(fa))); break;
     case FNMSUB_d: set_dreg(fd, -fma(-dreg(fn), dreg(fm), dreg(fa))); break;
-    default: UNIMPLEMENTED();
+    default: VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -2011,10 +2011,10 @@ T Simulator::FPMax(T a, T b) {
   } else if (IsSignallingNaN(b)) {
     return b;
   } else if (isnan(a)) {
-    ASSERT(IsQuietNaN(a));
+    VIXL_ASSERT(IsQuietNaN(a));
     return a;
   } else if (isnan(b)) {
-    ASSERT(IsQuietNaN(b));
+    VIXL_ASSERT(IsQuietNaN(b));
     return b;
   }
 
@@ -2046,10 +2046,10 @@ T Simulator::FPMin(T a, T b) {
   } else if (IsSignallingNaN(b)) {
     return b;
   } else if (isnan(a)) {
-    ASSERT(IsQuietNaN(a));
+    VIXL_ASSERT(IsQuietNaN(a));
     return a;
   } else if (isnan(b)) {
-    ASSERT(IsQuietNaN(b));
+    VIXL_ASSERT(IsQuietNaN(b));
     return b;
   }
 
@@ -2083,7 +2083,7 @@ void Simulator::VisitSystem(Instruction* instr) {
         switch (instr->ImmSystemRegister()) {
           case NZCV: set_xreg(instr->Rt(), nzcv().RawValue()); break;
           case FPCR: set_xreg(instr->Rt(), fpcr().RawValue()); break;
-          default: UNIMPLEMENTED();
+          default: VIXL_UNIMPLEMENTED();
         }
         break;
       }
@@ -2091,21 +2091,21 @@ void Simulator::VisitSystem(Instruction* instr) {
         switch (instr->ImmSystemRegister()) {
           case NZCV: nzcv().SetRawValue(xreg(instr->Rt())); break;
           case FPCR: fpcr().SetRawValue(xreg(instr->Rt())); break;
-          default: UNIMPLEMENTED();
+          default: VIXL_UNIMPLEMENTED();
         }
         break;
       }
     }
   } else if (instr->Mask(SystemHintFMask) == SystemHintFixed) {
-    ASSERT(instr->Mask(SystemHintMask) == HINT);
+    VIXL_ASSERT(instr->Mask(SystemHintMask) == HINT);
     switch (instr->ImmHint()) {
       case NOP: break;
-      default: UNIMPLEMENTED();
+      default: VIXL_UNIMPLEMENTED();
     }
   } else if (instr->Mask(MemBarrierFMask) == MemBarrierFixed) {
     __sync_synchronize();
   } else {
-    UNIMPLEMENTED();
+    VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -2123,22 +2123,22 @@ void Simulator::VisitException(Instruction* instr) {
       }
       break;
     default:
-      UNIMPLEMENTED();
+      VIXL_UNIMPLEMENTED();
   }
 }
 
 
 void Simulator::DoPrintf(Instruction* instr) {
-  ASSERT((instr->Mask(ExceptionMask) == HLT) &&
+  VIXL_ASSERT((instr->Mask(ExceptionMask) == HLT) &&
          (instr->ImmException() == kPrintfOpcode));
 
   // Read the argument encoded inline in the instruction stream.
   uint32_t type;
-  ASSERT(sizeof(*instr) == 1);
+  VIXL_ASSERT(sizeof(*instr) == 1);
   memcpy(&type, instr + kPrintfTypeOffset, sizeof(type));
 
   const char * format = reg<const char *>(0);
-  ASSERT(format != NULL);
+  VIXL_ASSERT(format != NULL);
 
   // Pass all of the relevant PCS registers onto printf. It doesn't matter
   // if we pass too many as the extra ones won't be read.
@@ -2150,7 +2150,7 @@ void Simulator::DoPrintf(Instruction* instr) {
     result = printf(format, dreg(0), dreg(1), dreg(2), dreg(3),
                             dreg(4), dreg(5), dreg(6), dreg(7));
   } else {
-    ASSERT(type == CPURegister::kNoRegister);
+    VIXL_ASSERT(type == CPURegister::kNoRegister);
     result = printf("%s", format);
   }
   set_xreg(0, result);
