@@ -1,0 +1,7 @@
+Code-Review+2: Brian Carlstrom <bdc@google.com>
+Verified+1: Ying Wang <wangying@android.com>
+Submitted-by: Ying Wang <wangying@android.com>
+Submitted-at: Fri, 16 May 2014 02:14:15 +0000
+Reviewed-on: https://android-review.googlesource.com/94822
+Project: platform/external/vixl
+Branch: refs/heads/master
