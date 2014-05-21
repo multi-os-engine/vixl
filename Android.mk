@@ -85,7 +85,7 @@ LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl
-include external/stlport/libstlport.mk
+include external/libcxx/libcxx.mk
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -97,11 +97,12 @@ LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixlg
-include external/stlport/libstlport.mk
+include external/libcxx/libcxx.mk
 include $(BUILD_SHARED_LIBRARY)
 
 ifeq ($(WITH_HOST_DALVIK),true)
 include $(CLEAR_VARS)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := -O2 -Wall -Wextra -DUSE_SIMULATOR
 LOCAL_C_INCLUDES := $(vixl_include_files)
@@ -115,6 +116,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 #
 # We only support 64bit host builds of cctest.
 include $(CLEAR_VARS)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := -O2 -Wall -Wextra -DUSE_SIMULATOR -DDEBUG=1 -UNDEBUG
 LOCAL_C_INCLUDES := $(vixl_include_files)
