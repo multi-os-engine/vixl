@@ -27,7 +27,7 @@
 #ifndef VIXL_UTILS_H
 #define VIXL_UTILS_H
 
-#include <math.h>
+#include <cmath>
 #include <string.h>
 #include "globals-vixl.h"
 
@@ -101,7 +101,7 @@ double rawbits_to_double(uint64_t bits);
 inline bool IsSignallingNaN(double num) {
   const uint64_t kFP64QuietNaNMask = UINT64_C(0x0008000000000000);
   uint64_t raw = double_to_rawbits(num);
-  if (isnan(num) && ((raw & kFP64QuietNaNMask) == 0)) {
+  if (std::isnan(num) && ((raw & kFP64QuietNaNMask) == 0)) {
     return true;
   }
   return false;
@@ -111,7 +111,7 @@ inline bool IsSignallingNaN(double num) {
 inline bool IsSignallingNaN(float num) {
   const uint32_t kFP32QuietNaNMask = 0x00400000;
   uint32_t raw = float_to_rawbits(num);
-  if (isnan(num) && ((raw & kFP32QuietNaNMask) == 0)) {
+  if (std::isnan(num) && ((raw & kFP32QuietNaNMask) == 0)) {
     return true;
   }
   return false;
@@ -120,7 +120,7 @@ inline bool IsSignallingNaN(float num) {
 
 template <typename T>
 inline bool IsQuietNaN(T num) {
-  return isnan(num) && !IsSignallingNaN(num);
+  return std::isnan(num) && !IsSignallingNaN(num);
 }
 
 
