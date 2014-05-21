@@ -1557,16 +1557,16 @@ void Assembler::MoveWide(const Register& rd,
     // Calculate a new immediate and shift combination to encode the immediate
     // argument.
     shift = 0;
-    if ((imm & 0xffffffffffff0000) == 0) {
+    if ((imm & UINT64_C(0xffffffffffff0000)) == 0) {
       // Nothing to do.
-    } else if ((imm & 0xffffffff0000ffff) == 0) {
+    } else if ((imm & UINT64_C(0xffffffff0000ffff)) == 0) {
       imm >>= 16;
       shift = 1;
-    } else if ((imm & 0xffff0000ffffffff) == 0) {
+    } else if ((imm & UINT64_C(0xffff0000ffffffff)) == 0) {
       VIXL_ASSERT(rd.Is64Bits());
       imm >>= 32;
       shift = 2;
-    } else if ((imm & 0x0000ffffffffffff) == 0) {
+    } else if ((imm & UINT64_C(0x0000ffffffffffff)) == 0) {
       VIXL_ASSERT(rd.Is64Bits());
       imm >>= 48;
       shift = 3;
@@ -2045,7 +2045,7 @@ bool Assembler::IsImmFP64(double imm) {
   // 0000.0000.0000.0000.0000.0000.0000.0000
   uint64_t bits = double_to_rawbits(imm);
   // bits[47..0] are cleared.
-  if ((bits & 0x0000ffffffffffff) != 0) {
+  if ((bits & UINT64_C(0x0000ffffffffffff)) != 0) {
     return false;
   }
 

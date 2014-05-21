@@ -602,7 +602,7 @@ void Debugger::PrintRegister(const Register& target_reg,
   const uint64_t reg_size = target_reg.SizeInBits();
   const uint64_t format_size = format->SizeOf() * 8;
   const uint64_t count = reg_size / format_size;
-  const uint64_t mask = 0xffffffffffffffff >> (64 - format_size);
+  const uint64_t mask = UINT64_C(0xffffffffffffffff) >> (64 - format_size);
   const uint64_t reg_value = reg<uint64_t>(reg_size,
                                            target_reg.code(),
                                            Reg31IsStackPointer);
@@ -624,7 +624,7 @@ void Debugger::PrintFPRegister(const FPRegister& target_fpreg,
   const uint64_t fpreg_size = target_fpreg.SizeInBits();
   const uint64_t format_size = format->SizeOf() * 8;
   const uint64_t count = fpreg_size / format_size;
-  const uint64_t mask = 0xffffffffffffffff >> (64 - format_size);
+  const uint64_t mask = UINT64_C(0xffffffffffffffff) >> (64 - format_size);
   const uint64_t fpreg_value = fpreg<uint64_t>(fpreg_size,
                                                target_fpreg.code());
   VIXL_ASSERT(count > 0);
