@@ -98,7 +98,7 @@ LOCAL_C_INCLUDES := $(vixl_include_files)
 LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := libvixlg
+LOCAL_MODULE := libvixld
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 include external/libcxx/libcxx.mk
 include $(BUILD_SHARED_LIBRARY)
@@ -112,6 +112,20 @@ LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
+LOCAL_MULTILIB := both
+include external/libcxx/libcxx.mk
+include $(BUILD_HOST_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_CLANG := true
+LOCAL_CPP_EXTENSION := .cc
+LOCAL_CPPFLAGS := -O2 -Wall -Wextra -DDEBUG=1 -DUSE_SIMULATOR -std=c++11
+LOCAL_C_INCLUDES := $(vixl_include_files)
+LOCAL_SRC_FILES :=  $(vixl_src_files)
+LOCAL_SHARED_LIBRARIES := liblog
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libvixld
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MULTILIB := both
 include external/libcxx/libcxx.mk
