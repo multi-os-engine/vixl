@@ -54,18 +54,6 @@
 
 LOCAL_PATH:= $(call my-dir)
 
-# Some build targets select clang compiler and some use default,
-# but clang compiler rejects cpu-a64.c.
-# a64/cpu-a64.cc:69:39: error: value size does not match register size
-# specified by the constraint and modifier [-Werror,-Wasm-operand-widths]
-ifeq ($(TARGET_ARCH),arm64)
-  vixl_use_clang := false
-  vixl_default_clang := false
-else
-  vixl_use_clang := true
-  vixl_default_clang :=
-endif
-
 vixl_include_files := $(LOCAL_PATH)/src/ \
 
 vixl_src_files := \
@@ -117,7 +105,7 @@ vixl_cpp_flags_debug := \
 
 
 include $(CLEAR_VARS)
-LOCAL_CLANG := $(vixl_default_clang)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
 LOCAL_CPPFLAGS_arm64 := -UUSE_SIMULATOR
@@ -131,7 +119,7 @@ include external/libcxx/libcxx.mk
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_CLANG := $(vixl_default_clang)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
 LOCAL_CPPFLAGS_arm64 := -UUSE_SIMULATOR
@@ -146,7 +134,7 @@ include $(BUILD_SHARED_LIBRARY)
 
 
 include $(CLEAR_VARS)
-LOCAL_CLANG := $(vixl_use_clang)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
 LOCAL_C_INCLUDES := $(vixl_include_files)
@@ -160,7 +148,7 @@ include external/libcxx/libcxx.mk
 include $(BUILD_HOST_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_CLANG := $(vixl_use_clang)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
 LOCAL_C_INCLUDES := $(vixl_include_files)
@@ -180,7 +168,7 @@ include $(BUILD_HOST_SHARED_LIBRARY)
 # To run all the tests: vixl-test-runner --run_all
 #
 include $(CLEAR_VARS)
-LOCAL_CLANG := $(vixl_use_clang)
+LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
 LOCAL_C_INCLUDES := $(vixl_include_files)
