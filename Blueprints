@@ -55,9 +55,11 @@
 vixl_cppflags = [
     "-DUSE_SIMULATOR",
     "-Wall",
-    "-Werror",
     "-Wextra",
+    "-Werror",
     "-fdiagnostics-show-option",
+    "-Wredundant-decls",
+    "-Wunreachable-code",
     "-pedantic",
     "-std=c++11",
     // Explicitly enable the write-strings warning. VIXL uses
@@ -78,23 +80,25 @@ cc_library {
 
     local_include_dirs: ["src/"],
     srcs: [
-        "src/a64/assembler-a64.cc",
-        "src/a64/cpu-a64.cc",
-        "src/a64/debugger-a64.cc",
-        "src/a64/decoder-a64.cc",
-        "src/a64/disasm-a64.cc",
-        "src/a64/instructions-a64.cc",
-        "src/a64/instrument-a64.cc",
-        "src/a64/macro-assembler-a64.cc",
-        "src/a64/simulator-a64.cc",
-        "src/code-buffer.cc",
-        "src/utils-vixl.cc",
+        "src/vixl/a64/assembler-a64.cc",
+        "src/vixl/a64/cpu-a64.cc",
+        "src/vixl/a64/debugger-a64.cc",
+        "src/vixl/a64/decoder-a64.cc",
+        "src/vixl/a64/disasm-a64.cc",
+        "src/vixl/a64/instructions-a64.cc",
+        "src/vixl/a64/instrument-a64.cc",
+        "src/vixl/a64/logic-a64.cc",
+        "src/vixl/a64/macro-assembler-a64.cc",
+        "src/vixl/a64/simulator-a64.cc",
+        "src/vixl/code-buffer.cc",
+        "src/vixl/compiler-intrinsics.cc",
+        "src/vixl/utils.cc",
     ],
     shared_libs: ["liblog"],
     name: "libvixl",
-    stl: "libc++",
 
     cppflags: vixl_cppflags,
+    clang_cflags: ["-Wimplicit-fallthrough"],
 
     arch: {
         arm64: {
@@ -121,10 +125,11 @@ cc_binary_host {
     cppflags: vixl_cppflags + vixl_cppflags_debug,
     local_include_dirs: ["src/"],
     srcs: [
+        "test/test-runner.cc",
         "test/test-assembler-a64.cc",
         "test/test-disasm-a64.cc",
         "test/test-fuzz-a64.cc",
-        "test/test-runner.cc",
+        "test/test-invalset.cc",
         "test/test-simulator-a64.cc",
         "test/test-utils-a64.cc",
     ],
