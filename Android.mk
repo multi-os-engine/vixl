@@ -57,33 +57,37 @@ LOCAL_PATH:= $(call my-dir)
 vixl_include_files := $(LOCAL_PATH)/src/ \
 
 vixl_src_files := \
-  src/a64/assembler-a64.cc \
-  src/a64/cpu-a64.cc \
-  src/a64/debugger-a64.cc \
-  src/a64/decoder-a64.cc \
-  src/a64/disasm-a64.cc \
-  src/a64/instructions-a64.cc \
-  src/a64/instrument-a64.cc \
-  src/a64/macro-assembler-a64.cc \
-  src/a64/simulator-a64.cc \
-  src/code-buffer.cc  \
-  src/utils-vixl.cc
+  src/vixl/a64/assembler-a64.cc \
+  src/vixl/a64/cpu-a64.cc \
+  src/vixl/a64/debugger-a64.cc \
+  src/vixl/a64/decoder-a64.cc \
+  src/vixl/a64/disasm-a64.cc \
+  src/vixl/a64/instructions-a64.cc \
+  src/vixl/a64/instrument-a64.cc \
+  src/vixl/a64/logic-a64.cc \
+  src/vixl/a64/macro-assembler-a64.cc \
+  src/vixl/a64/simulator-a64.cc \
+  src/vixl/code-buffer.cc  \
+  src/vixl/compiler-intrinsics.cc \
+  src/vixl/utils.cc
 
 vixl_test_files := \
+  test/test-runner.cc \
   test/test-assembler-a64.cc \
   test/test-disasm-a64.cc \
   test/test-fuzz-a64.cc \
-  test/test-runner.cc \
+  test/test-invalset.cc \
   test/test-simulator-a64.cc \
   test/test-utils-a64.cc \
-
 
 vixl_cpp_flags := \
   -DUSE_SIMULATOR \
   -Wall \
-  -Werror \
   -Wextra \
+  -Werror \
   -fdiagnostics-show-option \
+  -Wredundant-decls \
+  -Wunreachable-code \
   -pedantic \
   -std=c++11 \
 
@@ -103,33 +107,40 @@ vixl_cpp_flags_debug := \
   -O2 \
   -ggdb3 \
 
+VIXL_COVERAGE := false
+
+ifeq ($(ART_COVERAGE), true)
+  VIXL_COVERAGE := true
+endif
 
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_CPPFLAGS_arm64 := -UUSE_SIMULATOR
 LOCAL_C_INCLUDES := $(vixl_include_files)
 LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl
+LOCAL_SANITIZE_RECOVER := shift-exponent
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-include external/libcxx/libcxx.mk
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_CPPFLAGS_arm64 := -UUSE_SIMULATOR
 LOCAL_C_INCLUDES := $(vixl_include_files)
 LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld
+LOCAL_SANITIZE_RECOVER := shift-exponent
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-include external/libcxx/libcxx.mk
 include $(BUILD_SHARED_LIBRARY)
 
 
@@ -137,28 +148,32 @@ include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
+LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_include_files)
 LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl
+LOCAL_SANITIZE_RECOVER := shift-exponent
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MULTILIB := both
-include external/libcxx/libcxx.mk
 include $(BUILD_HOST_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
+LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_include_files)
 LOCAL_SRC_FILES :=  $(vixl_src_files)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld
+LOCAL_SANITIZE_RECOVER := shift-exponent
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MULTILIB := both
-include external/libcxx/libcxx.mk
 include $(BUILD_HOST_SHARED_LIBRARY)
 
 
@@ -171,14 +186,16 @@ include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
+LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_include_files)
 LOCAL_SRC_FILES :=  $(vixl_test_files) $(vixl_src_files)
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_HOST_ARCH := x86_64
 LOCAL_FORCE_STATIC_EXECUTABLE := true
 LOCAL_MODULE := vixl-test-runner
+LOCAL_SANITIZE_RECOVER := shift-exponent
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-include external/libcxx/libcxx.mk
 include $(BUILD_HOST_EXECUTABLE)
 
 .PHONY: run-vixl-tests

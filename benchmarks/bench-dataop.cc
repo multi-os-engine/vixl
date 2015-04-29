@@ -1,4 +1,4 @@
-// Copyright 2013, ARM Limited
+// Copyright 2014, ARM Limited
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -24,9 +24,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "a64/macro-assembler-a64.h"
-#include "a64/instructions-a64.h"
-#include "globals-vixl.h"
+#include "vixl/a64/macro-assembler-a64.h"
+#include "vixl/a64/instructions-a64.h"
+#include "vixl/globals.h"
 
 using namespace vixl;
 

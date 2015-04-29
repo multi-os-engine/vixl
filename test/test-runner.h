@@ -1,4 +1,4 @@
-// Copyright 2013, ARM Limited
+// Copyright 2014, ARM Limited
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
 #ifndef TEST_TEST_H_
 #define TEST_TEST_H_
 
-#include "utils-vixl.h"
+#include "vixl/utils.h"
 
 namespace vixl {
 
