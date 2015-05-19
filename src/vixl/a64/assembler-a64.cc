@@ -132,7 +132,10 @@ CPURegList CPURegList::GetCalleeSavedV(unsigned size) {
 CPURegList CPURegList::GetCallerSaved(unsigned size) {
   // Registers x0-x18 and lr (x30) are caller-saved.
   CPURegList list = CPURegList(CPURegister::kRegister, size, 0, 18);
-  list.Combine(lr);
+  // Temporary workaround for bug 21273194: Create a Register object equivalent
+  // to register lr (x30)
+  // list.Combine(lr);
+  list.Combine(Register(30, size));
   return list;
 }
 
