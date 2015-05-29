@@ -100,15 +100,7 @@ class LiteralPool : public Pool {
   ~LiteralPool();
   void Reset();
 
-  template <typename T>
-  RawLiteral* Add(T imm) {
-    return AddEntry(new Literal<T>(imm));
-  }
-  template <typename T>
-  RawLiteral* Add(T high64, T low64) {
-    return AddEntry(new Literal<T>(high64, low64));
-  }
-  RawLiteral* AddEntry(RawLiteral* literal);
+  void AddEntry(RawLiteral* literal);
   bool IsEmpty() const { return entries_.empty(); }
   size_t Size() const;
   size_t MaxSize() const;
@@ -119,6 +111,8 @@ class LiteralPool : public Pool {
 
   void SetNextRecommendedCheckpoint(ptrdiff_t offset);
   ptrdiff_t NextRecommendedCheckpoint();
+
+  void UpdateFirstUse(ptrdiff_t use_position);
 
   // Recommended not exact since the pool can be blocked for short periods.
   static const ptrdiff_t kRecommendedLiteralPoolRange = 128 * KBytes;
@@ -1465,9 +1459,13 @@ class MacroAssembler : public Assembler {
     SingleEmissionCheckScope guard(this);
     RawLiteral* literal;
     if (vt.IsD()) {
-      literal = literal_pool_.Add(imm);
+      literal = new Literal<double>(imm,
+                                    &literal_pool_,
+                                    RawLiteral::kDeletedByLiteralPool);
     } else {
-      literal = literal_pool_.Add(static_cast<float>(imm));
+      literal = new Literal<float>(static_cast<float>(imm),
+                                   &literal_pool_,
+                                   RawLiteral::kDeletedByLiteralPool);
     }
     ldr(vt, literal);
   }
@@ -1476,9 +1474,13 @@ class MacroAssembler : public Assembler {
     SingleEmissionCheckScope guard(this);
     RawLiteral* literal;
     if (vt.IsS()) {
-      literal = literal_pool_.Add(imm);
+      literal = new Literal<float>(imm,
+                                   &literal_pool_,
+                                   RawLiteral::kDeletedByLiteralPool);
     } else {
-      literal = literal_pool_.Add(static_cast<double>(imm));
+      literal = new Literal<double>(static_cast<double>(imm),
+                                    &literal_pool_,
+                                    RawLiteral::kDeletedByLiteralPool);
     }
     ldr(vt, literal);
   }
@@ -1486,7 +1488,9 @@ class MacroAssembler : public Assembler {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(vt.IsQ());
     SingleEmissionCheckScope guard(this);
-    ldr(vt, literal_pool_.Add(high64, low64));
+    ldr(vt, new Literal<uint64_t>(high64, low64,
+                                  &literal_pool_,
+                                  RawLiteral::kDeletedByLiteralPool));
   }
   void Ldr(const Register& rt, uint64_t imm) {
     VIXL_ASSERT(allow_macro_instructions_);
@@ -1494,11 +1498,15 @@ class MacroAssembler : public Assembler {
     SingleEmissionCheckScope guard(this);
     RawLiteral* literal;
     if (rt.Is64Bits()) {
-      literal = literal_pool_.Add(imm);
+      literal = new Literal<uint64_t>(imm,
+                                      &literal_pool_,
+                                      RawLiteral::kDeletedByLiteralPool);
     } else {
       VIXL_ASSERT(rt.Is32Bits());
       VIXL_ASSERT(is_uint32(imm) || is_int32(imm));
-      literal = literal_pool_.Add(static_cast<uint32_t>(imm));
+      literal = new Literal<uint32_t>(static_cast<uint32_t>(imm),
+                                      &literal_pool_,
+                                      RawLiteral::kDeletedByLiteralPool);
     }
     ldr(rt, literal);
   }
@@ -1506,7 +1514,19 @@ class MacroAssembler : public Assembler {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(!rt.IsZero());
     SingleEmissionCheckScope guard(this);
-    RawLiteral* literal = literal_pool_.Add(imm);
+    ldrsw(rt,
+          new Literal<uint32_t>(imm,
+                                &literal_pool_,
+                                RawLiteral::kDeletedByLiteralPool));
+  }
+  void Ldr(const CPURegister& rt, RawLiteral* literal) {
+    VIXL_ASSERT(allow_macro_instructions_);
+    SingleEmissionCheckScope guard(this);
+    ldr(rt, literal);
+  }
+  void Ldrsw(const Register& rt, RawLiteral* literal) {
+    VIXL_ASSERT(allow_macro_instructions_);
+    SingleEmissionCheckScope guard(this);
     ldrsw(rt, literal);
   }
   void Ldxp(const Register& rt, const Register& rt2, const MemOperand& src) {
@@ -2996,6 +3016,10 @@ class MacroAssembler : public Assembler {
   // The name is a two character string that will be attached to the marker in
   // the output data.
   void AnnotateInstrumentation(const char* marker_name);
+
+  LiteralPool* GetLiteralPool() {
+    return &literal_pool_;
+  }
 
  private:
   // The actual Push and Pop implementations. These don't generate any code

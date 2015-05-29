@@ -884,6 +884,9 @@ inline void InvalSet<INVAL_SET_TEMPLATE_PARAMETERS>::SetKey(
 #undef INVAL_SET_TEMPLATE_PARAMETERS
 
 
+class Assembler;
+class LiteralPool;
+
 // A literal is a 32-bit or 64-bit piece of data stored in the instruction
 // stream and loaded through a pc relative load. The same literal can be
 // referred to by multiple instructions but a literal can only reside at one
@@ -901,7 +904,24 @@ inline void InvalSet<INVAL_SET_TEMPLATE_PARAMETERS>::SetKey(
 //     chain are resolved and future loads fall back to possibility 1.
 class RawLiteral {
  public:
-  RawLiteral() : size_(0), offset_(0), low64_(0), high64_(0) {}
+  enum DeletionPolicy {
+    kDeletedByLiteralPool,
+    kManuallyDeleted
+  };
+
+  RawLiteral(size_t size,
+             LiteralPool* literal_pool,
+             DeletionPolicy ownership = kManuallyDeleted)
+      : size_(size),
+        offset_(0),
+        low64_(0),
+        high64_(0),
+        literal_pool_(literal_pool),
+        deletion_policy_(ownership) {
+    VIXL_ASSERT((ownership != kDeletedByLiteralPool) ||
+                (literal_pool_ != NULL));
+  }
+
 
   size_t size() {
     VIXL_STATIC_ASSERT(kDRegSizeInBytes == kXRegSizeInBytes);
@@ -933,11 +953,16 @@ class RawLiteral {
   bool IsUsed() { return offset_ < 0; }
   bool IsPlaced() { return offset_ > 0; }
 
+  LiteralPool* GetLiteralPool() const {
+    return literal_pool_;
+  }
+
  protected:
   ptrdiff_t offset() {
     VIXL_ASSERT(IsPlaced());
     return offset_ - 1;
   }
+
   void set_offset(ptrdiff_t offset) {
     VIXL_ASSERT(offset >= 0);
     VIXL_ASSERT(IsWordAligned(offset));
@@ -960,24 +985,80 @@ class RawLiteral {
   uint64_t low64_;
   uint64_t high64_;
 
+ private:
+  LiteralPool* literal_pool_;
+  DeletionPolicy deletion_policy_;
+
   friend class Assembler;
+  friend class LiteralPool;
 };
 
 
 template <typename T>
 class Literal : public RawLiteral {
  public:
-  explicit Literal(T value) {
-    VIXL_STATIC_ASSERT(sizeof(T) <= kXRegSizeInBytes);
-    size_ = sizeof(value);
-    memcpy(&low64_, &value, sizeof(value));
+  explicit Literal(T value,
+                   LiteralPool* literal_pool = NULL,
+                   RawLiteral::DeletionPolicy ownership = kManuallyDeleted)
+      : RawLiteral(sizeof(value), literal_pool, ownership) {
+    VIXL_STATIC_ASSERT(sizeof(value) <= kXRegSizeInBytes);
+    UpdateValue(value);
   }
 
-  Literal(T high64, T low64) {
-    VIXL_STATIC_ASSERT(sizeof(T) == (kQRegSizeInBytes / 2));
-    size_ = kQRegSizeInBytes;
+  Literal(T high64, T low64,
+          LiteralPool* literal_pool = NULL,
+          RawLiteral::DeletionPolicy ownership = kManuallyDeleted)
+      : RawLiteral(kQRegSizeInBytes, literal_pool, ownership) {
+    VIXL_STATIC_ASSERT(sizeof(low64) == (kQRegSizeInBytes / 2));
+    UpdateValue(high64, low64);
+  }
+
+  // Update the value of this literal, if necessary by rewriting the value in
+  // the pool.
+  // If the literal has already been placed in a literal pool, the address of
+  // the start of the code buffer must be provided, as the literal only knows it
+  // offset from there.  This also allows patching the value after the code has
+  // been moved in memory.
+  void UpdateValue(T new_value, uint8_t* code_buffer = NULL) {
+    VIXL_ASSERT(sizeof(new_value) == size_);
+    memcpy(&low64_, &new_value, sizeof(new_value));
+    if (IsPlaced()) {
+      VIXL_ASSERT(code_buffer != NULL);
+      RewriteValueInCode(code_buffer);
+    }
+  }
+
+  void UpdateValue(T high64, T low64, uint8_t* code_buffer = NULL) {
+    VIXL_ASSERT(sizeof(low64) == size_ / 2);
     memcpy(&low64_, &low64, sizeof(low64));
     memcpy(&high64_, &high64, sizeof(high64));
+    if (IsPlaced()) {
+      VIXL_ASSERT(code_buffer != NULL);
+      RewriteValueInCode(code_buffer);
+    }
+  }
+
+  void UpdateValue(T new_value, const Assembler* assembler);
+  void UpdateValue(T high64, T low64, const Assembler* assembler);
+
+ private:
+  void RewriteValueInCode(uint8_t* code_buffer) {
+    VIXL_ASSERT(IsPlaced());
+    VIXL_STATIC_ASSERT(sizeof(T) <= kXRegSizeInBytes);
+    switch (size()) {
+      case kSRegSizeInBytes:
+        *reinterpret_cast<uint32_t*>(code_buffer + offset()) = raw_value32();
+        break;
+      case kDRegSizeInBytes:
+        *reinterpret_cast<uint64_t*>(code_buffer + offset()) = raw_value64();
+        break;
+      default:
+        VIXL_ASSERT(size() == kQRegSizeInBytes);
+        uint64_t* base_address =
+            reinterpret_cast<uint64_t*>(code_buffer + offset());
+        *base_address = raw_value128_low64();
+        *(base_address + 1) = raw_value128_high64();
+    }
   }
 };
 
@@ -1064,14 +1145,14 @@ class Assembler {
 
   // Return the address of an offset in the buffer.
   template <typename T>
-  T GetOffsetAddress(ptrdiff_t offset) {
+  T GetOffsetAddress(ptrdiff_t offset) const {
     VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
     return buffer_->GetOffsetAddress<T>(offset);
   }
 
   // Return the address of a bound label.
   template <typename T>
-  T GetLabelAddress(const Label * label) {
+  T GetLabelAddress(const Label * label) const {
     VIXL_ASSERT(label->IsBound());
     VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
     return GetOffsetAddress<T>(label->location());
@@ -1086,7 +1167,7 @@ class Assembler {
 
   // Return the address of the start of the buffer.
   template <typename T>
-  T GetStartAddress() {
+  T GetStartAddress() const {
     VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
     return GetOffsetAddress<T>(0);
   }
@@ -4523,6 +4604,19 @@ class CodeBufferCheckScope {
   AssertPolicy assert_policy_;
 #endif
 };
+
+
+template <typename T>
+void Literal<T>::UpdateValue(T new_value, const Assembler* assembler) {
+  return UpdateValue(new_value, assembler->GetStartAddress<uint8_t*>());
+}
+
+
+template <typename T>
+void Literal<T>::UpdateValue(T high64, T low64, const Assembler* assembler) {
+  return UpdateValue(high64, low64, assembler->GetStartAddress<uint8_t*>());
+}
+
 
 }  // namespace vixl
 
