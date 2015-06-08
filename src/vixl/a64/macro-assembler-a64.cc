@@ -52,13 +52,21 @@ LiteralPool::LiteralPool(MacroAssembler* masm)
 LiteralPool::~LiteralPool() {
   VIXL_ASSERT(IsEmpty());
   VIXL_ASSERT(!IsBlocked());
+  for (std::vector<RawLiteral*>::iterator it = deleted_on_destruction_.begin();
+       it != deleted_on_destruction_.end();
+       it++) {
+    delete *it;
+  }
 }
 
 
 void LiteralPool::Reset() {
   std::vector<RawLiteral*>::iterator it, end;
   for (it = entries_.begin(), end = entries_.end(); it != end; ++it) {
-    delete *it;
+    RawLiteral* literal = *it;
+    if (literal->deletion_policy_ == RawLiteral::kDeletedOnPlacementByPool) {
+      delete literal;
+    }
   }
   entries_.clear();
   size_ = 0;
@@ -101,29 +109,36 @@ void LiteralPool::Emit(EmitOption option) {
   for (it = entries_.begin(), end = entries_.end(); it != end; ++it) {
     VIXL_ASSERT((*it)->IsUsed());
     masm_->place(*it);
-    delete *it;
   }
 
   if (option == kBranchRequired) masm_->bind(&end_of_pool);
 
-  entries_.clear();
   Reset();
 }
 
 
-RawLiteral* LiteralPool::AddEntry(RawLiteral* literal) {
-  if (IsEmpty()) {
-    first_use_ = masm_->CursorOffset();
+void LiteralPool::AddEntry(RawLiteral* literal) {
+  // A literal must be registered immediately before its first use. Here we
+  // cannot control that it is its first use, but we check no code has been
+  // emitted since its last use.
+  VIXL_ASSERT(masm_->CursorOffset() == literal->last_use());
+
+  UpdateFirstUse(masm_->CursorOffset());
+  VIXL_ASSERT(masm_->CursorOffset() >= first_use_);
+  entries_.push_back(literal);
+  size_ += literal->size();
+}
+
+
+void LiteralPool::UpdateFirstUse(ptrdiff_t use_position) {
+  first_use_ = std::min(first_use_, use_position);
+  if (first_use_ == -1) {
+    first_use_ = use_position;
     SetNextRecommendedCheckpoint(NextRecommendedCheckpoint());
     SetNextCheckpoint(first_use_ + Instruction::kLoadLiteralRange);
   } else {
-    VIXL_ASSERT(masm_->CursorOffset() > first_use_);
+    VIXL_ASSERT(use_position > first_use_);
   }
-
-  entries_.push_back(literal);
-  size_ += literal->size();
-
-  return literal;
 }
 
 
@@ -1231,8 +1246,10 @@ void MacroAssembler::Fmov(VRegister vd, double imm) {
       if (rawbits == 0) {
         fmov(vd, xzr);
       } else {
-        RawLiteral* literal = literal_pool_.Add(imm);
-        ldr(vd, literal);
+        ldr(vd,
+            new Literal<double>(imm,
+                                &literal_pool_,
+                                RawLiteral::kDeletedOnPlacementByPool));
       }
     } else {
       // TODO: consider NEON support for load literal.
@@ -1261,8 +1278,10 @@ void MacroAssembler::Fmov(VRegister vd, float imm) {
       if (rawbits == 0) {
         fmov(vd, wzr);
       } else {
-        RawLiteral* literal = literal_pool_.Add(imm);
-        ldr(vd, literal);
+        ldr(vd,
+            new Literal<float>(imm,
+                               &literal_pool_,
+                               RawLiteral::kDeletedOnPlacementByPool));
       }
     } else {
       // TODO: consider NEON support for load literal.

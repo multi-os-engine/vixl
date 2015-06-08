@@ -27,6 +27,7 @@
 
 #include <cmath>
 #include "vixl/a64/assembler-a64.h"
+#include "vixl/a64/macro-assembler-a64.h"
 
 namespace vixl {
 
@@ -472,6 +473,22 @@ void MemOperand::AddOffset(int64_t offset) {
 }
 
 
+RawLiteral::RawLiteral(size_t size,
+                       LiteralPool* literal_pool,
+                       DeletionPolicy deletion_policy)
+    : size_(size),
+      offset_(0),
+      low64_(0),
+      high64_(0),
+      literal_pool_(literal_pool),
+      deletion_policy_(deletion_policy) {
+  VIXL_ASSERT((deletion_policy == kManuallyDeleted) || (literal_pool_ != NULL));
+  if (deletion_policy == kDeletedOnPoolDestruction) {
+    literal_pool_->DeleteOnDestruction(this);
+  }
+}
+
+
 // Assembler
 Assembler::Assembler(byte* buffer, size_t capacity,
                      PositionIndependentCodeOption pic)
@@ -595,11 +612,16 @@ void Assembler::place(RawLiteral* literal) {
       dc64(literal->raw_value128_low64());
       dc64(literal->raw_value128_high64());
   }
+
+  literal->literal_pool_ = NULL;
 }
 
 
 ptrdiff_t Assembler::LinkAndGetWordOffsetTo(RawLiteral* literal) {
   VIXL_ASSERT(IsWordAligned(CursorOffset()));
+
+  bool register_first_use =
+      (literal->GetLiteralPool() != NULL) && !literal->IsUsed();
 
   if (literal->IsPlaced()) {
     // The literal is "behind", the offset will be negative.
@@ -613,6 +635,10 @@ ptrdiff_t Assembler::LinkAndGetWordOffsetTo(RawLiteral* literal) {
     offset = (literal->last_use() - CursorOffset()) >> kLiteralEntrySizeLog2;
   }
   literal->set_last_use(CursorOffset());
+
+  if (register_first_use) {
+    literal->GetLiteralPool()->AddEntry(literal);
+  }
 
   return offset;
 }
@@ -3232,7 +3258,7 @@ NEON_3SAME_LIST(DEFINE_ASM_FUNC)
 #undef DEFINE_ASM_FUNC
 
 
-#define NEON_FP3SAME_LIST(V)                     \
+#define NEON_FP3SAME_OP_LIST(V)                  \
   V(fadd,    NEON_FADD,    FADD)                 \
   V(fsub,    NEON_FSUB,    FSUB)                 \
   V(fmul,    NEON_FMUL,    FMUL)                 \
@@ -3273,7 +3299,7 @@ void Assembler::FN(const VRegister& vd,                \
   }                                                    \
   NEONFP3Same(vd, vn, vm, op);                         \
 }
-NEON_FP3SAME_LIST(DEFINE_ASM_FUNC)
+NEON_FP3SAME_OP_LIST(DEFINE_ASM_FUNC)
 #undef DEFINE_ASM_FUNC
 
 
