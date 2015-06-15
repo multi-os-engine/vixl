@@ -201,4 +201,5 @@ include $(BUILD_HOST_EXECUTABLE)
 .PHONY: run-vixl-tests
 run-vixl-tests: vixl-test-runner
 	$(HOST_OUT)/bin/vixl-test-runner --run_all
+	$(HOST_OUT)/bin/vixl-test-runner --run_all --debugger
 	@echo vixl tests PASSED
