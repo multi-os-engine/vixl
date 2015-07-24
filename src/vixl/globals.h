@@ -68,20 +68,20 @@ const int KBytes = 1024;
 const int MBytes = 1024 * KBytes;
 
 #ifdef __ANDROID__
-  #define VIXL_ABORT() ALOGE("in %s, line %i", __FILE__, __LINE__); abort()
+  #define VIXL_ABORT() do { ALOGE("in %s, line %i", __FILE__, __LINE__); abort(); } while (false) // NOLINT
 #else
-  #define VIXL_ABORT() printf("in %s, line %i", __FILE__, __LINE__); abort()
+  #define VIXL_ABORT() do { printf("in %s, line %i", __FILE__, __LINE__); abort(); } while (false) // NOLINT
 #endif
 
 #ifdef VIXL_DEBUG
   #define VIXL_ASSERT(condition) assert(condition)
   #define VIXL_CHECK(condition) VIXL_ASSERT(condition)
   #ifdef __ANDROID__
-    #define VIXL_UNIMPLEMENTED() ALOGD("UNIMPLEMENTED\t"); VIXL_ABORT()
-    #define VIXL_UNREACHABLE() ALOGD("UNREACHABLE\t"); VIXL_ABORT()
+    #define VIXL_UNIMPLEMENTED() do { ALOGD("UNIMPLEMENTED\t"); VIXL_ABORT(); } while (false) // NOLINT
+    #define VIXL_UNREACHABLE() do { ALOGD("UNREACHABLE\t"); VIXL_ABORT(); } while (false) // NOLINT
   #else
-    #define VIXL_UNIMPLEMENTED() printf("UNIMPLEMENTED\t"); VIXL_ABORT()
-    #define VIXL_UNREACHABLE() printf("UNREACHABLE\t"); VIXL_ABORT()
+    #define VIXL_UNIMPLEMENTED() do { printf("UNIMPLEMENTED\t"); VIXL_ABORT(); } while (false) // NOLINT
+    #define VIXL_UNREACHABLE() do { printf("UNREACHABLE\t"); VIXL_ABORT(); } while (false) // NOLINT
   #endif
 #else
   #define VIXL_ASSERT(condition) ((void) 0)
@@ -98,15 +98,23 @@ const int MBytes = 1024 * KBytes;
   __attribute__((unused))
 #define VIXL_STATIC_ASSERT(condition) VIXL_STATIC_ASSERT_LINE(__LINE__, condition) //NOLINT
 
-template <typename T> inline void USE(T) {}
-template <typename T> inline void USE(T, T) {}
-template <typename T> inline void USE(T, T, T) {}
-template <typename T> inline void USE(T, T, T, T) {}
+template <typename T1>
+inline void USE(T1) {}
+
+template <typename T1, typename T2>
+inline void USE(T1, T2) {}
+
+template <typename T1, typename T2, typename T3>
+inline void USE(T1, T2, T3) {}
+
+template <typename T1, typename T2, typename T3, typename T4>
+inline void USE(T1, T2, T3, T4) {}
+
 
 #ifdef __ANDROID__
-  #define VIXL_ALIGNMENT_EXCEPTION() ALOGD("ALIGNMENT EXCEPTION\t"); VIXL_ABORT() //NOLINT
+  #define VIXL_ALIGNMENT_EXCEPTION() do { ALOGD("ALIGNMENT EXCEPTION\t"); VIXL_ABORT() ; } while (false) // NOLINT
 #else
-  #define VIXL_ALIGNMENT_EXCEPTION() printf("ALIGNMENT EXCEPTION\t"); VIXL_ABORT() //NOLINT
+  #define VIXL_ALIGNMENT_EXCEPTION() do { printf("ALIGNMENT EXCEPTION\t"); VIXL_ABORT(); } while (false) // NOLINT
 #endif
 
 // The clang::fallthrough attribute is used along with the Wimplicit-fallthrough
