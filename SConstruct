@@ -78,6 +78,7 @@ options = {
                    '-Wextra',
                    '-Wredundant-decls',
                    '-pedantic',
+                   '-Wmissing-noreturn',
                    '-Wwrite-strings'],
       'CPPPATH' : [config.dir_src_vixl]
       },
@@ -91,7 +92,7 @@ options = {
       'CCFLAGS' : ['-O3']
       },
     'simulator:on' : {
-      'CCFLAGS' : ['-DUSE_SIMULATOR'],
+      'CCFLAGS' : ['-DVIXL_INCLUDE_SIMULATOR'],
       },
     'symbols:on' : {
       'CCFLAGS' : ['-g'],
