@@ -83,6 +83,7 @@ vixl_test_files := \
   test/test-invalset.cc \
   test/test-runner.cc \
   test/test-simulator-a64.cc \
+  test/test-trace-a64.cc \
   test/test-utils-a64.cc
 
 vixl_cpp_flags := \
