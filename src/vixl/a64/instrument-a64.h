@@ -39,7 +39,10 @@ const int kCounterNameMaxLength = 256;
 const uint64_t kDefaultInstrumentationSamplingPeriod = 1 << 22;
 
 
-enum InstrumentState { InstrumentStateDisable = 0, InstrumentStateEnable = 1 };
+enum InstrumentState {
+  InstrumentStateDisable = 0,
+  InstrumentStateEnable = 1
+};
 
 
 enum CounterType {
@@ -68,20 +71,19 @@ class Counter {
 };
 
 
-class Instrument : public DecoderVisitor {
+class Instrument: public DecoderVisitor {
  public:
-  explicit Instrument(
-      const char* datafile = NULL,
-      uint64_t sample_period = kDefaultInstrumentationSamplingPeriod);
+  explicit Instrument(const char* datafile = NULL,
+    uint64_t sample_period = kDefaultInstrumentationSamplingPeriod);
   ~Instrument();
 
   void Enable();
   void Disable();
 
-// Declare all Visitor functions.
-#define DECLARE(A) void Visit##A(const Instruction* instr);
+  // Declare all Visitor functions.
+  #define DECLARE(A) void Visit##A(const Instruction* instr);
   VISITOR_LIST(DECLARE)
-#undef DECLARE
+  #undef DECLARE
 
  private:
   void Update();
@@ -96,7 +98,7 @@ class Instrument : public DecoderVisitor {
 
   std::list<Counter*> counters_;
 
-  FILE* output_stream_;
+  FILE *output_stream_;
 
   // Counter information is dumped every sample_period_ instructions decoded.
   // For a sample_period_ = 0 a final counter value is only produced when the
