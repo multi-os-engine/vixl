@@ -1,12 +1,6 @@
 VIXL Change Log
 ===============
 
-* 1.13
-    + Improve code formatting and add tests using clang-format.
-    + Fix bugs in disassembly of unallocated instruction encodings.
-    + Fix some execution trace bugs, and add tests.
-    + Other small bug fixes and improvements.
-
 * 1.12
     + Bug fixes for toolchain compatibility.
 
