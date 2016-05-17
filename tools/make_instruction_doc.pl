@@ -26,9 +26,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use v5.10.1;
-no warnings 'experimental::smartmatch';
-
 # Assembler header file.
 my $hfile = "src/vixl/a64/assembler-a64.h";
 
@@ -38,7 +35,7 @@ my @extras = qw/bind debug dci dc32 dc64 place/;
 my %inst = ();  # Global hash of instructions.
 
 $/ = '';
-open(IN, "<$hfile") or die("Can't open header file $hfile.\n");
+open(IN, "<$hfile") or die("Can't open header file $header.\n");
 while(<IN>)
 {
   # Find a function formatted like an instruction.
