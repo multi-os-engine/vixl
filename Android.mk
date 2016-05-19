@@ -83,6 +83,7 @@ vixl_test_files := \
   test/test-invalset.cc \
   test/test-runner.cc \
   test/test-simulator-a64.cc \
+  test/test-trace-a64.cc \
   test/test-utils-a64.cc
 
 vixl_cpp_flags := \
@@ -239,6 +240,8 @@ include $(BUILD_HOST_EXECUTABLE)
 .PHONY: run-vixl-tests
 run-vixl-tests: vixl-test-runner
 	$(vixl_root)/third_party/android/check_top_level_android_mk.sh
-	$(HOST_OUT)/bin/vixl-test-runner --run_all
-	$(HOST_OUT)/bin/vixl-test-runner --run_all --debugger
+	# TODO: Once available, use the appropriate option of vixl-test-runner
+	# to point to the trace files instead of running from the vixl root.
+	cd $(vixl_root) && ../../$(HOST_OUT)/bin/vixl-test-runner --run_all
+	cd $(vixl_root) && ../../$(HOST_OUT)/bin/vixl-test-runner --run_all --debugger
 	@echo vixl tests PASSED
