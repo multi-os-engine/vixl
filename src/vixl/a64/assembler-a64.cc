@@ -3220,7 +3220,7 @@ NEON_3SAME_LIST(DEFINE_ASM_FUNC)
                      const VRegister& vn,               \
                      const VRegister& vm) {             \
     Instr op;                                           \
-    if ((SCA_OP != 0) && vd.IsScalar()) {               \
+    if (((SCA_OP) != 0) && vd.IsScalar()) {             \
       VIXL_ASSERT(vd.Is1S() || vd.Is1D());              \
       op = SCA_OP;                                      \
     } else {                                            \
