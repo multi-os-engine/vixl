@@ -713,7 +713,7 @@ class Operand {
   //       <shift_amount> is uint6_t.
   // This is allowed to be an implicit constructor because Operand is
   // a wrapper class that doesn't normally perform any type conversion.
-  Operand(Register reg,
+  Operand(Register reg,  // NOLINT, implicit
           Shift shift = LSL,
           unsigned shift_amount = 0);  // NOLINT(runtime/explicit)
 
@@ -1207,7 +1207,7 @@ enum LoadStoreScalingOption {
 // Assembler.
 class Assembler {
  public:
-  Assembler(size_t capacity = 4 * KBytes,
+  explicit Assembler(size_t capacity = 4 * KBytes,
             PositionIndependentCodeOption pic = PositionIndependentCode);
   Assembler(byte* buffer,
             size_t capacity,

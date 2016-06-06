@@ -3931,6 +3931,7 @@ uint64_t Simulator::FPToUInt64(double value, FPRounding rmode) {
 }
 
 
+// NOLINT: clang-tidy adds parentheses around 'FN'.
 #define DEFINE_NEON_FP_VECTOR_OP(FN, OP, PROCNAN)                \
   template <typename T>                                          \
   LogicVRegister Simulator::FN(VectorFormat vform,               \
@@ -3960,10 +3961,10 @@ uint64_t Simulator::FPToUInt64(double value, FPRounding rmode) {
                                const LogicVRegister& src1,       \
                                const LogicVRegister& src2) {     \
     if (LaneSizeInBitsFromFormat(vform) == kSRegSize) {          \
-      FN<float>(vform, dst, src1, src2);                         \
+      FN<float>(vform, dst, src1, src2);     /* NOLINT */        \
     } else {                                                     \
       VIXL_ASSERT(LaneSizeInBitsFromFormat(vform) == kDRegSize); \
-      FN<double>(vform, dst, src1, src2);                        \
+      FN<double>(vform, dst, src1, src2);    /* NOLINT */        \
     }                                                            \
     return dst;                                                  \
   }
