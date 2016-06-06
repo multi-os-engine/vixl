@@ -2484,7 +2484,7 @@ static void TestOpImmOpImmNEON(const char * name,
 #define CALL_TEST_FP_HELPER(mnemonic, variant, type, input)         \
     Test##type(STRINGIFY(mnemonic) "_" STRINGIFY(variant),          \
                &MacroAssembler::mnemonic,                           \
-               input, sizeof(input) / sizeof(input[0]),             \
+               input, sizeof(input) / sizeof((input)[0]),           \
                kExpected_##mnemonic##_##variant,                    \
                kExpectedCount_##mnemonic##_##variant)
 
@@ -2576,7 +2576,7 @@ DEFINE_TEST_FP_TO_INT(fcvtzu, FPToFixedU, Conversions)
     Test1OpNEON(STRINGIFY(mnemonic) "_" STRINGIFY(vdform),                   \
                 &MacroAssembler::mnemonic,                                   \
                 input_n,                                                     \
-                (sizeof(input_n) / sizeof(input_n[0])),                      \
+                (sizeof(input_n) / sizeof((input_n)[0])),                    \
                 kExpected_NEON_##mnemonic##_##vdform,                        \
                 kExpectedCount_NEON_##mnemonic##_##vdform,                   \
                 kFormat##vdform,                                             \
@@ -2589,7 +2589,7 @@ DEFINE_TEST_FP_TO_INT(fcvtzu, FPToFixedU, Conversions)
                                           "_" STRINGIFY(vnform),             \
                       &MacroAssembler::mnemonic,                             \
                       input_n,                                               \
-                      (sizeof(input_n) / sizeof(input_n[0])),                \
+                      (sizeof(input_n) / sizeof((input_n)[0])),              \
                       kExpected_NEON_##mnemonic##_##vdform##_##vnform,       \
                       kExpectedCount_NEON_##mnemonic##_##vdform##_##vnform,  \
                       kFormat##vdform,                                       \
@@ -2602,9 +2602,9 @@ DEFINE_TEST_FP_TO_INT(fcvtzu, FPToFixedU, Conversions)
                 &MacroAssembler::mnemonic,                                   \
                 input_d,                                                     \
                 input_n,                                                     \
-                (sizeof(input_n) / sizeof(input_n[0])),                      \
+                (sizeof(input_n) / sizeof((input_n)[0])),                    \
                 input_m,                                                     \
-                (sizeof(input_m) / sizeof(input_m[0])),                      \
+                (sizeof(input_m) / sizeof((input_m)[0])),                    \
                 kExpected_NEON_##mnemonic##_##vdform,                        \
                 kExpectedCount_NEON_##mnemonic##_##vdform,                   \
                 kFormat##vdform,                                             \
@@ -2617,9 +2617,9 @@ DEFINE_TEST_FP_TO_INT(fcvtzu, FPToFixedU, Conversions)
     Test2OpImmNEON(STRINGIFY(mnemonic) "_" STRINGIFY(vdform) "_2OPIMM",      \
                    &MacroAssembler::mnemonic,                                \
                    input_n,                                                  \
-                   (sizeof(input_n) / sizeof(input_n[0])),                   \
+                   (sizeof(input_n) / sizeof((input_n)[0])),                 \
                    input_m,                                                  \
-                   (sizeof(input_m) / sizeof(input_m[0])),                   \
+                   (sizeof(input_m) / sizeof((input_m)[0])),                 \
                    kExpected_NEON_##mnemonic##_##vdform##_2OPIMM,            \
                    kExpectedCount_NEON_##mnemonic##_##vdform##_2OPIMM,       \
                    kFormat##vdform,                                          \
@@ -2633,11 +2633,11 @@ DEFINE_TEST_FP_TO_INT(fcvtzu, FPToFixedU, Conversions)
         &MacroAssembler::mnemonic,                                           \
         input_d,                                                             \
         input_n,                                                             \
-        (sizeof(input_n) / sizeof(input_n[0])),                              \
+        (sizeof(input_n) / sizeof((input_n)[0])),                            \
         input_m,                                                             \
-        (sizeof(input_m) / sizeof(input_m[0])),                              \
+        (sizeof(input_m) / sizeof((input_m)[0])),                            \
         indices,                                                             \
-        (sizeof(indices) / sizeof(indices[0])),                              \
+        (sizeof(indices) / sizeof((indices)[0])),                            \
         kExpected_NEON_##mnemonic##_##vdform##_##vnform##_##vmform,          \
         kExpectedCount_NEON_##mnemonic##_##vdform##_##vnform##_##vmform,     \
         kFormat##vdform,                                                     \
@@ -2653,11 +2653,11 @@ DEFINE_TEST_FP_TO_INT(fcvtzu, FPToFixedU, Conversions)
                        helper,                                               \
                        input_d,                                              \
                        input_imm1,                                           \
-                       (sizeof(input_imm1) / sizeof(input_imm1[0])),         \
+                       (sizeof(input_imm1) / sizeof((input_imm1)[0])),       \
                        input_n,                                              \
-                       (sizeof(input_n) / sizeof(input_n[0])),               \
+                       (sizeof(input_n) / sizeof((input_n)[0])),             \
                        input_imm2,                                           \
-                       (sizeof(input_imm2) / sizeof(input_imm2[0])),         \
+                       (sizeof(input_imm2) / sizeof((input_imm2)[0])),       \
                        kExpected_NEON_##mnemonic##_##vdform,                 \
                        kExpectedCount_NEON_##mnemonic##_##vdform,            \
                        kFormat##vdform,                                      \

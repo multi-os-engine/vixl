@@ -106,8 +106,8 @@ namespace aarch64 {
   SETUP_COMMON()
 
 #define SETUP_CUSTOM(size, pic)                                                \
-  byte* buf = new byte[size + BUF_SIZE];                                       \
-  MacroAssembler masm(buf, size + BUF_SIZE, pic);                              \
+  byte* buf = new byte[(size) + BUF_SIZE];                                     \
+  MacroAssembler masm(buf, (size) + BUF_SIZE, pic);                            \
   SETUP_COMMON()
 
 #define SETUP_COMMON()                                                         \
@@ -219,7 +219,7 @@ namespace aarch64 {
   assert(EqualNzcv(expected, core.flags_nzcv()))
 
 #define ASSERT_EQUAL_REGISTERS(expected)                                       \
-  assert(EqualRegisters(&expected, &core))
+  assert(EqualRegisters(&(expected), &core))
 
 #define ASSERT_EQUAL_32(expected, result)                                      \
   assert(Equal32(static_cast<uint32_t>(expected), &core, result))
@@ -237,7 +237,7 @@ namespace aarch64 {
   assert(Equal128(expected_h, expected_l, &core, result))
 
 #define ASSERT_LITERAL_POOL_SIZE(expected)                                     \
-  assert((expected + kInstructionSize) == (masm.GetLiteralPoolSize()))
+  assert(((expected) + kInstructionSize) == (masm.GetLiteralPoolSize()))
 
 
 TEST(stack_ops) {

@@ -292,12 +292,12 @@ class NeonImmediate {
     double d_;
     uint32_t u32_;
     float f_;
-    NeonImmediateType(uint64_t u) : u64_(u) {}
-    NeonImmediateType(int64_t u) : u64_(u) {}
-    NeonImmediateType(uint32_t u) : u32_(u) {}
-    NeonImmediateType(int32_t u) : u32_(u) {}
-    NeonImmediateType(double d) : d_(d) {}
-    NeonImmediateType(float f) : f_(f) {}
+    explicit NeonImmediateType(uint64_t u) : u64_(u) {}
+    explicit NeonImmediateType(int64_t u) : u64_(u) {}
+    explicit NeonImmediateType(uint32_t u) : u32_(u) {}
+    explicit NeonImmediateType(int32_t u) : u32_(u) {}
+    explicit NeonImmediateType(double d) : d_(d) {}
+    explicit NeonImmediateType(float f) : f_(f) {}
     NeonImmediateType(const NeonImmediateType& ref) : u64_(ref.u64_) {}
   } imm_;
 

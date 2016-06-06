@@ -44,7 +44,7 @@ namespace aarch32 {
 #define BUF_SIZE (4096)
 
 #define ASSERT_LITERAL_POOL_SIZE(size) \
-    do { assert(__ GetLiteralPoolSize() == size); } while (false)
+    do { assert(__ GetLiteralPoolSize() == (size)); } while (false)
 
 #ifdef VIXL_INCLUDE_SIMULATOR
 // No simulator yet.
