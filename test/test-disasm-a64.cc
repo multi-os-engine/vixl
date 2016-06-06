@@ -36,10 +36,11 @@
 
 #define EXP_SIZE   (256)
 #define INSTR_SIZE (1024)
+// NOLINT: clang-tidy adds parentheses around 'ASMCLASS'.
 #define SETUP_CLASS(ASMCLASS)                                                  \
   byte* buf = new byte[INSTR_SIZE];                                            \
   uint32_t encoding = 0;                                                       \
-  ASMCLASS* masm = new ASMCLASS(buf, INSTR_SIZE);                              \
+  ASMCLASS* masm = new ASMCLASS(buf, INSTR_SIZE);   /* NOLINT */               \
   Decoder* decoder = new Decoder();                                            \
   Disassembler* disasm = new Disassembler();                                   \
   decoder->AppendVisitor(disasm)
@@ -3030,9 +3031,9 @@ TEST(barriers) {
 }
 
 
-#define VLIST2(v) v, VRegister((v.code()+1)%32, v.size(), v.lanes())
-#define VLIST3(v) VLIST2(v), VRegister((v.code()+2)%32, v.size(), v.lanes())
-#define VLIST4(v) VLIST3(v), VRegister((v.code()+3)%32, v.size(), v.lanes())
+#define VLIST2(v) v, VRegister(((v).code()+1)%32, (v).size(), (v).lanes())
+#define VLIST3(v) VLIST2(v), VRegister(((v).code()+2)%32, (v).size(), (v).lanes())
+#define VLIST4(v) VLIST3(v), VRegister(((v).code()+3)%32, (v).size(), (v).lanes())
 
 
 #define NEON_FORMAT_LIST(V)       \

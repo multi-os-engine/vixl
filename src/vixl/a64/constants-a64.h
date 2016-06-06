@@ -184,8 +184,8 @@ R(24) R(25) R(26) R(27) R(28) R(29) R(30) R(31)
 // Fields offsets.
 #define DECLARE_FIELDS_OFFSETS(Name, HighBit, LowBit, X) \
   const int Name##_offset = LowBit;                      \
-  const int Name##_width = HighBit - LowBit + 1;         \
-  const uint32_t Name##_mask = ((1 << Name##_width) - 1) << LowBit;
+  const int Name##_width = (HighBit) - (LowBit) + 1;     \
+  const uint32_t Name##_mask = ((1 << Name##_width) - 1) << (LowBit);
 #define NOTHING(A, B)
 INSTRUCTION_FIELDS_LIST(DECLARE_FIELDS_OFFSETS)
 SYSTEM_REGISTER_FIELDS_LIST(DECLARE_FIELDS_OFFSETS, NOTHING)
@@ -477,8 +477,8 @@ enum AddSubImmediateOp {
   AddSubImmediateFMask = 0x1F000000,
   AddSubImmediateMask  = 0xFF000000,
   #define ADD_SUB_IMMEDIATE(A)           \
-  A##_w_imm = AddSubImmediateFixed | A,  \
-  A##_x_imm = AddSubImmediateFixed | A | SixtyFourBits
+  A##_w_imm = AddSubImmediateFixed | (A),  \
+  A##_x_imm = AddSubImmediateFixed | (A) | SixtyFourBits
   ADD_SUB_OP_LIST(ADD_SUB_IMMEDIATE)
   #undef ADD_SUB_IMMEDIATE
 };
@@ -488,8 +488,8 @@ enum AddSubShiftedOp {
   AddSubShiftedFMask   = 0x1F200000,
   AddSubShiftedMask    = 0xFF200000,
   #define ADD_SUB_SHIFTED(A)             \
-  A##_w_shift = AddSubShiftedFixed | A,  \
-  A##_x_shift = AddSubShiftedFixed | A | SixtyFourBits
+  A##_w_shift = AddSubShiftedFixed | (A),  \
+  A##_x_shift = AddSubShiftedFixed | (A) | SixtyFourBits
   ADD_SUB_OP_LIST(ADD_SUB_SHIFTED)
   #undef ADD_SUB_SHIFTED
 };
@@ -499,8 +499,8 @@ enum AddSubExtendedOp {
   AddSubExtendedFMask  = 0x1F200000,
   AddSubExtendedMask   = 0xFFE00000,
   #define ADD_SUB_EXTENDED(A)           \
-  A##_w_ext = AddSubExtendedFixed | A,  \
-  A##_x_ext = AddSubExtendedFixed | A | SixtyFourBits
+  A##_w_ext = AddSubExtendedFixed | (A),  \
+  A##_x_ext = AddSubExtendedFixed | (A) | SixtyFourBits
   ADD_SUB_OP_LIST(ADD_SUB_EXTENDED)
   #undef ADD_SUB_EXTENDED
 };
@@ -779,7 +779,7 @@ enum LoadStorePairPostIndexOp {
   LoadStorePairPostIndexFMask = 0x3B800000,
   LoadStorePairPostIndexMask  = 0xFFC00000,
   #define LOAD_STORE_PAIR_POST_INDEX(A, B, C)  \
-  A##_##B##_post = LoadStorePairPostIndexFixed | A##_##B
+  A##_##B##_post = LoadStorePairPostIndexFixed | A##_##B  // NOLINT
   LOAD_STORE_PAIR_OP_LIST(LOAD_STORE_PAIR_POST_INDEX)
   #undef LOAD_STORE_PAIR_POST_INDEX
 };
@@ -789,7 +789,7 @@ enum LoadStorePairPreIndexOp {
   LoadStorePairPreIndexFMask = 0x3B800000,
   LoadStorePairPreIndexMask  = 0xFFC00000,
   #define LOAD_STORE_PAIR_PRE_INDEX(A, B, C)  \
-  A##_##B##_pre = LoadStorePairPreIndexFixed | A##_##B
+  A##_##B##_pre = LoadStorePairPreIndexFixed | A##_##B  // NOLINT
   LOAD_STORE_PAIR_OP_LIST(LOAD_STORE_PAIR_PRE_INDEX)
   #undef LOAD_STORE_PAIR_PRE_INDEX
 };
@@ -799,7 +799,7 @@ enum LoadStorePairOffsetOp {
   LoadStorePairOffsetFMask = 0x3B800000,
   LoadStorePairOffsetMask  = 0xFFC00000,
   #define LOAD_STORE_PAIR_OFFSET(A, B, C)  \
-  A##_##B##_off = LoadStorePairOffsetFixed | A##_##B
+  A##_##B##_off = LoadStorePairOffsetFixed | A##_##B  // NOLINT
   LOAD_STORE_PAIR_OP_LIST(LOAD_STORE_PAIR_OFFSET)
   #undef LOAD_STORE_PAIR_OFFSET
 };
@@ -878,7 +878,7 @@ enum LoadStoreUnscaledOffsetOp {
   LoadStoreUnscaledOffsetMask  = 0xFFE00C00,
   PRFUM                        = LoadStoreUnscaledOffsetFixed | PRFM,
   #define LOAD_STORE_UNSCALED(A, B, C, D)  \
-  A##U##B##_##C = LoadStoreUnscaledOffsetFixed | D
+  A##U##B##_##C = LoadStoreUnscaledOffsetFixed | D  // NOLINT
   LOAD_STORE_OP_LIST(LOAD_STORE_UNSCALED)
   #undef LOAD_STORE_UNSCALED
 };
@@ -889,7 +889,7 @@ enum LoadStorePostIndex {
   LoadStorePostIndexFMask = 0x3B200C00,
   LoadStorePostIndexMask  = 0xFFE00C00,
   #define LOAD_STORE_POST_INDEX(A, B, C, D)  \
-  A##B##_##C##_post = LoadStorePostIndexFixed | D
+  A##B##_##C##_post = LoadStorePostIndexFixed | D  // NOLINT
   LOAD_STORE_OP_LIST(LOAD_STORE_POST_INDEX)
   #undef LOAD_STORE_POST_INDEX
 };
@@ -900,7 +900,7 @@ enum LoadStorePreIndex {
   LoadStorePreIndexFMask = 0x3B200C00,
   LoadStorePreIndexMask  = 0xFFE00C00,
   #define LOAD_STORE_PRE_INDEX(A, B, C, D)  \
-  A##B##_##C##_pre = LoadStorePreIndexFixed | D
+  A##B##_##C##_pre = LoadStorePreIndexFixed | D  // NOLINT
   LOAD_STORE_OP_LIST(LOAD_STORE_PRE_INDEX)
   #undef LOAD_STORE_PRE_INDEX
 };
@@ -912,7 +912,7 @@ enum LoadStoreUnsignedOffset {
   LoadStoreUnsignedOffsetMask  = 0xFFC00000,
   PRFM_unsigned                = LoadStoreUnsignedOffsetFixed | PRFM,
   #define LOAD_STORE_UNSIGNED_OFFSET(A, B, C, D) \
-  A##B##_##C##_unsigned = LoadStoreUnsignedOffsetFixed | D
+  A##B##_##C##_unsigned = LoadStoreUnsignedOffsetFixed | D  // NOLINT
   LOAD_STORE_OP_LIST(LOAD_STORE_UNSIGNED_OFFSET)
   #undef LOAD_STORE_UNSIGNED_OFFSET
 };
@@ -924,7 +924,7 @@ enum LoadStoreRegisterOffset {
   LoadStoreRegisterOffsetMask  = 0xFFE00C00,
   PRFM_reg                     = LoadStoreRegisterOffsetFixed | PRFM,
   #define LOAD_STORE_REGISTER_OFFSET(A, B, C, D) \
-  A##B##_##C##_reg = LoadStoreRegisterOffsetFixed | D
+  A##B##_##C##_reg = LoadStoreRegisterOffsetFixed | D  // NOLINT
   LOAD_STORE_OP_LIST(LOAD_STORE_REGISTER_OFFSET)
   #undef LOAD_STORE_REGISTER_OFFSET
 };
