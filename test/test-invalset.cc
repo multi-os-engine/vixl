@@ -24,9 +24,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "invalset-vixl.h"
 #include "test-runner.h"
-
-#include "vixl/invalset.h"
 
 namespace vixl {
 
