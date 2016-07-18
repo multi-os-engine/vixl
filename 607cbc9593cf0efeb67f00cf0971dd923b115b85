@@ -1,0 +1,8 @@
+Presubmit-Ready+1: Treehugger Robot <treehugger-gerrit@google.com>
+Code-Review+2: Vladimir Marko <vmarko@google.com>
+Verified+1: Roland Levillain <rpl@google.com>
+Submitted-by: Roland Levillain <rpl@google.com>
+Submitted-at: Mon, 18 Jul 2016 17:07:09 +0000
+Reviewed-on: https://android-review.googlesource.com/248810
+Project: platform/external/vixl
+Branch: refs/heads/master
