@@ -31,6 +31,10 @@
 #include "globals-vixl.h"
 #include "a64/cpu-a64.h"
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 namespace vixl {
 
 ExecutableMemory::ExecutableMemory(size_t size)
