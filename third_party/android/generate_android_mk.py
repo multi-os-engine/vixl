@@ -31,11 +31,6 @@ import argparse
 import glob
 import os
 
-def get_source_files(dir_root, path):
-  sources = glob.glob(os.path.join(dir_root, path))
-  sources = map(lambda p : os.path.relpath(p, dir_root), sources)
-  sources.sort()
-  return sources
 
 dir_android = os.path.dirname(os.path.realpath(__file__))
 dir_root = os.path.join(dir_android, '..', '..')
@@ -53,15 +48,14 @@ parser.add_argument('-o', '--output',
                     help='Target file.')
 args = parser.parse_args()
 
-common_sources = get_source_files(dir_root, os.path.join('src', '*.cc'))
-a32_sources = get_source_files(dir_root, os.path.join('src', 'a32', '*.cc'))
-a64_sources = get_source_files(dir_root, os.path.join('src', 'a64', '*.cc'))
 
-test_common_sources = get_source_files(dir_root, os.path.join('test', '*.cc'))
-test_a64_sources = get_source_files(dir_root, os.path.join('test', 'a64', '*.cc'))
-test_a32_sources = get_source_files(dir_root, os.path.join('test', 'a32', '*.cc'))
-test_sources = test_common_sources + test_a32_sources + test_a64_sources
+sources = glob.glob(os.path.join(dir_root, 'src', 'vixl', '*.cc')) + \
+          glob.glob(os.path.join(dir_root, 'src', 'vixl', 'a64', '*.cc'))
+sources = map(lambda p : os.path.relpath(p, dir_root), sources)
+sources.sort()
 
+test_sources = glob.glob(os.path.join(dir_root, 'test', '*.cc'))
+test_sources = map(lambda p : os.path.relpath(p, dir_root), test_sources)
 test_sources.sort()
 
 android_mk_template = os.path.join(dir_android, 'Android.mk.template')
@@ -69,9 +63,7 @@ with open(android_mk_template, 'r') as template_file:
   template = template_file.read()
 
 
-template = template.format(vixl_common=' \\\n  '.join(common_sources),
-                           vixl_a64_sources=' \\\n  '.join(a64_sources),
-                           vixl_a32_sources=' \\\n  '.join(a32_sources),
+template = template.format(vixl_sources=' \\\n  '.join(sources),
                            vixl_test_files=' \\\n  '.join(test_sources))
 
 
