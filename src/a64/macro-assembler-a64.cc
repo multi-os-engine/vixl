@@ -296,7 +296,8 @@ EmissionCheckScope::~EmissionCheckScope() {
 }
 
 
-MacroAssembler::MacroAssembler() :
+MacroAssembler::MacroAssembler()
+    :
 #ifdef VIXL_DEBUG
       allow_macro_instructions_(true),
 #endif
