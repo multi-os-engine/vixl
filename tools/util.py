@@ -1,4 +1,4 @@
-# Copyright 2015, ARM Limited
+# Copyright 2015, VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -68,3 +68,6 @@ def require_program(program_name):
   if rc != 0:
     print('ERROR: The required program %s was not found.' % program_name)
     sys.exit(rc)
+
+def relrealpath(path, start=os.getcwd()):
+  return os.path.relpath(os.path.realpath(path), start)
