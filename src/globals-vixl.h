@@ -1,4 +1,4 @@
-// Copyright 2015, ARM Limited
+// Copyright 2015, VIXL authors
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -52,6 +52,8 @@
 #include "platform-vixl.h"
 
 
+namespace vixl {
+
 typedef uint8_t byte;
 
 // Type for half-precision (16 bit) floating point numbers.
@@ -59,6 +61,10 @@ typedef uint16_t float16;
 
 const int KBytes = 1024;
 const int MBytes = 1024 * KBytes;
+
+const int kBitsPerByte = 8;
+
+}  // namespace vixl
 
 #define VIXL_ABORT()                              \
   do {                                            \
@@ -93,23 +99,35 @@ const int MBytes = 1024 * KBytes;
 // It assumes that the descriptions are unique. If this starts being a problem,
 // we can switch to a different implemention.
 #define VIXL_CONCAT(a, b) a##b
-#define VIXL_STATIC_ASSERT_LINE(line, condition)                            \
+#if __cplusplus >= 201103L
+#define VIXL_STATIC_ASSERT_LINE(line_unused, condition, message) \
+  static_assert(condition, message)
+#else
+#define VIXL_STATIC_ASSERT_LINE(line, condition, message_unused)            \
   typedef char VIXL_CONCAT(STATIC_ASSERT_LINE_, line)[(condition) ? 1 : -1] \
       __attribute__((unused))
+#endif
 #define VIXL_STATIC_ASSERT(condition) \
-  VIXL_STATIC_ASSERT_LINE(__LINE__, condition)
+  VIXL_STATIC_ASSERT_LINE(__LINE__, condition, "")
+#define VIXL_STATIC_ASSERT_MESSAGE(condition, message) \
+  VIXL_STATIC_ASSERT_LINE(__LINE__, condition, message)
+
+#define VIXL_WARNING(message)                                          \
+  do {                                                                 \
+    printf("WARNING in %s, line %i: %s", __FILE__, __LINE__, message); \
+  } while (false)
 
 template <typename T1>
-inline void USE(T1) {}
+inline void USE(const T1&) {}
 
 template <typename T1, typename T2>
-inline void USE(T1, T2) {}
+inline void USE(const T1&, const T2&) {}
 
 template <typename T1, typename T2, typename T3>
-inline void USE(T1, T2, T3) {}
+inline void USE(const T1&, const T2&, const T3&) {}
 
 template <typename T1, typename T2, typename T3, typename T4>
-inline void USE(T1, T2, T3, T4) {}
+inline void USE(const T1&, const T2&, const T3&, const T4&) {}
 
 #define VIXL_ALIGNMENT_EXCEPTION()            \
   do {                                        \
@@ -140,6 +158,11 @@ inline void USE(T1, T2, T3, T4) {}
 #else
 #define VIXL_NO_RETURN __attribute__((noreturn))
 #endif
+#ifdef VIXL_DEBUG
+#define VIXL_NO_RETURN_IN_DEBUG_MODE VIXL_NO_RETURN
+#else
+#define VIXL_NO_RETURN_IN_DEBUG_MODE
+#endif
 
 // Some functions might only be marked as "noreturn" for the DEBUG build. This
 // macro should be used for such cases (for more details see what
@@ -151,14 +174,14 @@ inline void USE(T1, T2, T3, T4) {}
 #endif
 
 #ifdef VIXL_INCLUDE_SIMULATOR
-#ifndef VIXL_GENERATE_SIMULATOR_INSTRUCTIONS_VALUE
-#define VIXL_GENERATE_SIMULATOR_INSTRUCTIONS_VALUE 1
+#ifndef VIXL_GENERATE_SIMULATOR_CODE
+#define VIXL_GENERATE_SIMULATOR_CODE 1
 #endif
 #else
-#ifndef VIXL_GENERATE_SIMULATOR_INSTRUCTIONS_VALUE
-#define VIXL_GENERATE_SIMULATOR_INSTRUCTIONS_VALUE 0
+#ifndef VIXL_GENERATE_SIMULATOR_CODE
+#define VIXL_GENERATE_SIMULATOR_CODE 0
 #endif
-#if VIXL_GENERATE_SIMULATOR_INSTRUCTIONS_VALUE
+#if VIXL_GENERATE_SIMULATOR_CODE
 #warning "Generating Simulator instructions without Simulator support."
 #endif
 #endif

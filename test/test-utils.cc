@@ -1,4 +1,4 @@
-// Copyright 2015, ARM Limited
+// Copyright 2015, VIXL authors
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,13 +29,16 @@
 #include <sys/mman.h>
 
 #include "globals-vixl.h"
-#include "a64/cpu-a64.h"
-
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS MAP_ANON
-#endif
+#include "aarch64/cpu-aarch64.h"
 
 namespace vixl {
+
+// BSD uses `MAP_ANON` instead of the Linux `MAP_ANONYMOUS`. The `MAP_ANONYMOUS`
+// alias should generally be available, but is not always, so define it manually
+// if necessary.
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 ExecutableMemory::ExecutableMemory(size_t size)
   : size_(size),

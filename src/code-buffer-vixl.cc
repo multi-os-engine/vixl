@@ -1,4 +1,4 @@
-// Copyright 2014, ARM Limited
+// Copyright 2014, VIXL authors
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,16 +30,22 @@
 namespace vixl {
 
 
-CodeBuffer::CodeBuffer(size_t capacity) : managed_(true), capacity_(capacity) {
-  VIXL_CHECK(capacity_ != 0);
+CodeBuffer::CodeBuffer(size_t capacity)
+    : buffer_(NULL),
+      managed_(true),
+      cursor_(NULL),
+      dirty_(false),
+      capacity_(capacity) {
+  if (capacity_ == 0) {
+    return;
+  }
   buffer_ = reinterpret_cast<byte*>(malloc(capacity_));
   VIXL_CHECK(buffer_ != NULL);
-  // A64 instructions must be word aligned, we assert the default allocator
+  // Aarch64 instructions must be word aligned, we assert the default allocator
   // always returns word align memory.
   VIXL_ASSERT(IsWordAligned(buffer_));
 
   cursor_ = buffer_;
-  dirty_ = false;
 }
 
 

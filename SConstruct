@@ -1,4 +1,4 @@
-# Copyright 2015, ARM Limited
+# Copyright 2015, VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -79,7 +79,8 @@ options = {
                    '-Wredundant-decls',
                    '-pedantic',
                    '-Wmissing-noreturn',
-                   '-Wwrite-strings'],
+                   '-Wwrite-strings',
+                   '-Wunused'],
       'CPPPATH' : [config.dir_src_vixl]
       },
 #   'build_option:value' : {
@@ -89,8 +90,7 @@ options = {
       'CCFLAGS' : ['-DVIXL_DEBUG', '-O0']
       },
     'mode:release' : {
-      'CCFLAGS' : ['-O3', '-fdata-sections', '-ffunction-sections'],
-      'LINKFLAGS' : ['-Wl,--gc-sections']
+      'CCFLAGS' : ['-O3'],
       },
     'simulator:on' : {
       'CCFLAGS' : ['-DVIXL_INCLUDE_SIMULATOR'],
@@ -213,12 +213,7 @@ def ConfigureEnvironmentForCompiler(env):
     if not using_clang3_4:
       env.Append(CPPFLAGS = ['-Wunreachable-code'])
 
-    env.Append(CPPFLAGS = ['-Wno-unreachable-code'])
     env.Append(CPPFLAGS = ['-Wno-shorten-64-to-32'])
-    env.Append(CPPFLAGS = ['-Wno-missing-noreturn'])
-    env.Append(CPPFLAGS = ['-Wno-unused-private-field'])
-    env.Append(CPPFLAGS = ['-Wno-implicit-fallthrough'])
-    env.Append(CPPFLAGS = ['-Wno-sometimes-uninitialized'])
 
   # GCC 4.8 has a bug which produces a warning saying that an anonymous Operand
   # object might be used uninitialized:
@@ -236,12 +231,6 @@ def ConfigureEnvironmentForCompiler(env):
   # standard is passed.
   if 'std' not in env or env['std'] == 'c++98':
     env.Append(CPPFLAGS = ['-Wno-c++11-long-long'])
-
-  # The generated macro assembler contains uninitialized variables and
-  # GCC cannot prove that they are always initialised, even though it
-  # should.
-  if env['mode'] == 'release' and is_compiler('g++'):
-    env.Append(CPPFLAGS = ['-Wno-maybe-uninitialized'])
 
 
 def ConfigureEnvironment(env):
@@ -276,13 +265,13 @@ def VIXLLibraryTarget(env):
   subprocess.check_call(["rm", "-rf", config.dir_build_latest])
   util.ensure_dir(build_dir)
   subprocess.check_call(["ln", "-s", build_dir, config.dir_build_latest])
-  # Source files are in `src` and in `src/a64/`.
+  # Source files are in `src` and in `src/aarch64/`.
   variant_dir_vixl = PrepareVariantDir(join('src'), build_dir)
-  variant_dir_a32 = PrepareVariantDir(join('src', 'a32'), build_dir)
-  variant_dir_a64 = PrepareVariantDir(join('src', 'a64'), build_dir)
+  variant_dir_aarch32 = PrepareVariantDir(join('src', 'aarch32'), build_dir)
+  variant_dir_aarch64 = PrepareVariantDir(join('src', 'aarch64'), build_dir)
   sources = [Glob(join(variant_dir_vixl, '*.cc')),
-             Glob(join(variant_dir_a32, '*.cc')),
-             Glob(join(variant_dir_a64, '*.cc'))]
+             Glob(join(variant_dir_aarch32, '*.cc')),
+             Glob(join(variant_dir_aarch64, '*.cc'))]
   return env.Library(join(build_dir, 'vixl'), sources)
 
 
@@ -300,65 +289,65 @@ top_level_targets.Add('', 'Build the VIXL library.')
 
 
 # The benchmarks.
-a64_benchmark_names = util.ListCCFilesWithoutExt(config.dir_a64_benchmarks)
-a64_benchmarks_build_dir = PrepareVariantDir('benchmarks/a64', TargetBuildDir(env))
-a64_benchmark_targets = []
-for bench in a64_benchmark_names:
-  prog = env.Program(join(a64_benchmarks_build_dir, bench),
-                     join(a64_benchmarks_build_dir, bench + '.cc'),
+aarch64_benchmark_names = util.ListCCFilesWithoutExt(config.dir_aarch64_benchmarks)
+aarch64_benchmarks_build_dir = PrepareVariantDir('benchmarks/aarch64', TargetBuildDir(env))
+aarch64_benchmark_targets = []
+for bench in aarch64_benchmark_names:
+  prog = env.Program(join(aarch64_benchmarks_build_dir, bench),
+                     join(aarch64_benchmarks_build_dir, bench + '.cc'),
                      LIBS=[libvixl])
-  a64_benchmark_targets.append(prog)
-env.Alias('a64_benchmarks', a64_benchmark_targets)
-top_level_targets.Add('a64_benchmarks', 'Build the benchmarks for AArch64.')
+  aarch64_benchmark_targets.append(prog)
+env.Alias('aarch64_benchmarks', aarch64_benchmark_targets)
+top_level_targets.Add('aarch64_benchmarks', 'Build the benchmarks for AArch64.')
 
 
 # The examples.
-a64_example_names = util.ListCCFilesWithoutExt(config.dir_a64_examples)
-a64_examples_build_dir = PrepareVariantDir('examples/a64', TargetBuildDir(env))
-a64_example_targets = []
-for example in a64_example_names:
-  prog = env.Program(join(a64_examples_build_dir, example),
-                     join(a64_examples_build_dir, example + '.cc'),
+aarch64_example_names = util.ListCCFilesWithoutExt(config.dir_aarch64_examples)
+aarch64_examples_build_dir = PrepareVariantDir('examples/aarch64', TargetBuildDir(env))
+aarch64_example_targets = []
+for example in aarch64_example_names:
+  prog = env.Program(join(aarch64_examples_build_dir, example),
+                     join(aarch64_examples_build_dir, example + '.cc'),
                      LIBS=[libvixl])
-  a64_example_targets.append(prog)
-env.Alias('a64_examples', a64_example_targets)
-top_level_targets.Add('a64_examples', 'Build the examples for AArch64.')
-a32_example_names = util.ListCCFilesWithoutExt(config.dir_a32_examples)
-a32_examples_build_dir = PrepareVariantDir('examples/a32', TargetBuildDir(env))
-a32_example_targets = []
-for example in a32_example_names:
-  prog = env.Program(join(a32_examples_build_dir, example),
-                     join(a32_examples_build_dir, example + '.cc'),
+  aarch64_example_targets.append(prog)
+env.Alias('aarch64_examples', aarch64_example_targets)
+top_level_targets.Add('aarch64_examples', 'Build the examples for AArch64.')
+aarch32_example_names = util.ListCCFilesWithoutExt(config.dir_aarch32_examples)
+aarch32_examples_build_dir = PrepareVariantDir('examples/aarch32', TargetBuildDir(env))
+aarch32_example_targets = []
+for example in aarch32_example_names:
+  prog = env.Program(join(aarch32_examples_build_dir, example),
+                     join(aarch32_examples_build_dir, example + '.cc'),
                      LIBS=[libvixl])
-  a32_example_targets.append(prog)
-env.Alias('a32_examples', a32_example_targets)
-top_level_targets.Add('a32_examples', 'Build the examples for AArch32.')
+  aarch32_example_targets.append(prog)
+env.Alias('aarch32_examples', aarch32_example_targets)
+top_level_targets.Add('aarch32_examples', 'Build the examples for AArch32.')
 
 
 # The tests.
 test_build_dir = PrepareVariantDir('test', TargetBuildDir(env))
 test_objects = [env.Object(Glob(join(test_build_dir, '*.cc')))]
 
-test_a32_build_dir = PrepareVariantDir(join('test', 'a32'), TargetBuildDir(env))
+test_aarch32_build_dir = PrepareVariantDir(join('test', 'aarch32'), TargetBuildDir(env))
 test_objects.append(env.Object(
-    Glob(join(test_a32_build_dir, '*.cc')),
+    Glob(join(test_aarch32_build_dir, '*.cc')),
     CPPPATH = env['CPPPATH'] + [config.dir_tests]))
 
-test_a64_build_dir = PrepareVariantDir(join('test', 'a64'), TargetBuildDir(env))
+test_aarch64_build_dir = PrepareVariantDir(join('test', 'aarch64'), TargetBuildDir(env))
 test_objects.append(env.Object(
-    Glob(join(test_a64_build_dir, '*.cc')),
+    Glob(join(test_aarch64_build_dir, '*.cc')),
     CPPPATH = env['CPPPATH'] + [config.dir_tests]))
 
 # The test requires building the example files with specific options, so we
 # create a separate variant dir for the example objects built this way.
-test_a64_examples_vdir = join(TargetBuildDir(env), 'test', 'a64', 'test_examples')
-VariantDir(test_a64_examples_vdir, '.')
-test_a64_examples_obj = env.Object(
-    [Glob(join(test_a64_examples_vdir, join('test', 'a64', 'examples/a64', '*.cc'))),
-     Glob(join(test_a64_examples_vdir, join('examples/a64', '*.cc')))],
+test_aarch64_examples_vdir = join(TargetBuildDir(env), 'test', 'aarch64', 'test_examples')
+VariantDir(test_aarch64_examples_vdir, '.')
+test_aarch64_examples_obj = env.Object(
+    [Glob(join(test_aarch64_examples_vdir, join('test', 'aarch64', 'examples/aarch64', '*.cc'))),
+     Glob(join(test_aarch64_examples_vdir, join('examples/aarch64', '*.cc')))],
     CCFLAGS = env['CCFLAGS'] + ['-DTEST_EXAMPLES'],
-    CPPPATH = env['CPPPATH'] + [config.dir_a64_examples] + [config.dir_tests])
-test_objects.append(test_a64_examples_obj)
+    CPPPATH = env['CPPPATH'] + [config.dir_aarch64_examples] + [config.dir_tests])
+test_objects.append(test_aarch64_examples_obj)
 
 test = env.Program(join(test_build_dir, 'test-runner'), test_objects,
                    LIBS=[libvixl])
