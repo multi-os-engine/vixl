@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7
 
-# Copyright 2015, ARM Limited
+# Copyright 2015, VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -208,10 +208,7 @@ def BuildOptions():
                                  help='''Skip the lint and clang-format tests,
                                  and run only with one compiler, in one mode,
                                  with one C++ standard, and with an appropriate
-                                 default for runtime options. The compiler,
-                                 mode, and C++ standard used are the first ones
-                                 provided to the script or in the default
-                                 arguments.''')
+                                 default for runtime options.''')
   general_arguments.add_argument(
     '--jobs', '-j', metavar='N', type=int, nargs='?',
     default=multiprocessing.cpu_count(),
@@ -226,6 +223,8 @@ def BuildOptions():
                                  help='Do not run clang-format.')
   general_arguments.add_argument('--notest', action='store_true',
                                  help='Do not run tests.')
+  general_arguments.add_argument('--fail-early', action='store_true',
+                                 help='Exit as soon as a test fails.')
   sim_default = 'off' if platform.machine() == 'aarch64' else 'on'
   general_arguments.add_argument(
     '--simulator', action='store', choices=['on', 'off'],
@@ -320,10 +319,10 @@ def RunCommand(command, environment_options = None):
 
 
 def RunLinter():
-  rc, default_tracked_files = lint.GetDefaultTrackedFiles()
+  rc, default_tracked_files = lint.GetDefaultFilesToLint()
   if rc:
     return rc
-  return lint.LintFiles(map(lambda x: join(dir_root, x), default_tracked_files),
+  return lint.RunLinter(map(lambda x: join(dir_root, x), default_tracked_files),
                         jobs = args.jobs, progress_prefix = 'cpp lint: ')
 
 
@@ -342,10 +341,11 @@ def BuildAll(build_options, jobs):
 
 def RunBenchmarks():
   rc = 0
-  benchmark_names = util.ListCCFilesWithoutExt(config.dir_a64_benchmarks)
+  benchmark_names = util.ListCCFilesWithoutExt(config.dir_aarch64_benchmarks)
   for bench in benchmark_names:
     rc |= RunCommand(
-      [os.path.realpath(join(config.dir_build_latest, 'benchmarks/a64', bench))])
+      [util.relrealpath(
+          join(config.dir_build_latest, 'benchmarks/aarch64', bench))])
   return rc
 
 
@@ -364,22 +364,31 @@ if __name__ == '__main__':
 
   args = BuildOptions()
 
+  def MaybeExitEarly(rc):
+    if args.fail_early and rc != 0:
+      PrintStatus(rc == 0)
+      sys.exit(rc)
+
   if args.under_valgrind:
     util.require_program('valgrind')
 
   if args.fast:
     def SetFast(option, specified, default):
       option.val_test_choices = \
-        [default[0] if specified == 'all' else specified[0]]
-    SetFast(environment_option_compiler, args.compiler, config.tested_compilers)
-    SetFast(build_option_mode, args.mode, config.build_options_modes)
-    SetFast(build_option_standard, args.std, config.tested_cpp_standards)
-    SetFast(runtime_option_debugger, args.debugger, ['on', 'off'])
+        [default if specified == 'all' else specified[0]]
+    # `g++` is very slow to compile a few aarch32 test files.
+    SetFast(environment_option_compiler, args.compiler, 'clang++')
+    SetFast(build_option_standard, args.std, 'c++98')
+    SetFast(build_option_mode, args.mode, 'debug')
+    SetFast(runtime_option_debugger, args.debugger, 'on')
 
   if not args.nolint and not args.fast:
     rc |= RunLinter()
+    MaybeExitEarly(rc)
+
   if not args.noclang_format and not args.fast:
     rc |= RunClangFormat()
+    MaybeExitEarly(rc)
 
   # Don't try to test the debugger if we are not running with the simulator.
   if not args.simulator:
@@ -403,11 +412,12 @@ if __name__ == '__main__':
         # Don't run the tests for this configuration if the build failed.
         if build_rc != 0:
           rc |= build_rc
+          MaybeExitEarly(rc)
           continue
 
       # Use the realpath of the test executable so that the commands printed
       # can be copy-pasted and run.
-      test_executable = os.path.realpath(
+      test_executable = util.relrealpath(
         join(config.dir_build_latest, 'test', 'test-runner'))
 
       if not args.notest:
@@ -422,9 +432,11 @@ if __name__ == '__main__':
                                         list(runtime_options),
                                         args.under_valgrind,
                                         jobs = args.jobs, prefix = prefix)
+          MaybeExitEarly(rc)
 
       if not args.nobench:
         rc |= RunBenchmarks()
+        MaybeExitEarly(rc)
 
   PrintStatus(rc == 0)
 

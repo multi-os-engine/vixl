@@ -30,7 +30,7 @@
 # SUCH DAMAGE.
 #
 #
-# Copyright (c) 2015 ARM Ltd
+# Copyright (c) 2015 VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -67,142 +67,144 @@ vixl_common_files := \
   src/compiler-intrinsics-vixl.cc \
   src/utils-vixl.cc
 
-vixl_src_files_a32 := \
-  src/a32/assembler-a32.cc \
-  src/a32/disasm-a32.cc \
-  src/a32/instructions-a32.cc \
-  src/a32/macro-assembler-a32.cc \
-  src/a32/operand-a32.cc
+vixl_src_files_arm := \
+  src/aarch32/assembler-aarch32.cc \
+  src/aarch32/disasm-aarch32.cc \
+  src/aarch32/instructions-aarch32.cc \
+  src/aarch32/macro-assembler-aarch32.cc \
+  src/aarch32/operand-aarch32.cc
 
-vixl_src_files_a64 := \
-  src/a64/assembler-a64.cc \
-  src/a64/cpu-a64.cc \
-  src/a64/debugger-a64.cc \
-  src/a64/decoder-a64.cc \
-  src/a64/disasm-a64.cc \
-  src/a64/instructions-a64.cc \
-  src/a64/instrument-a64.cc \
-  src/a64/logic-a64.cc \
-  src/a64/macro-assembler-a64.cc \
-  src/a64/simulator-a64.cc
+vixl_src_files_arm64 := \
+  src/aarch64/assembler-aarch64.cc \
+  src/aarch64/cpu-aarch64.cc \
+  src/aarch64/debugger-aarch64.cc \
+  src/aarch64/decoder-aarch64.cc \
+  src/aarch64/disasm-aarch64.cc \
+  src/aarch64/instructions-aarch64.cc \
+  src/aarch64/instrument-aarch64.cc \
+  src/aarch64/logic-aarch64.cc \
+  src/aarch64/macro-assembler-aarch64.cc \
+  src/aarch64/operands-aarch64.cc \
+  src/aarch64/simulator-aarch64.cc
 
 vixl_test_files := \
-  test/a32/test-assembler-a32.cc \
-  test/a32/test-assembler-cond-rd-memop-immediate-512-a32.cc \
-  test/a32/test-assembler-cond-rd-memop-immediate-8192-a32.cc \
-  test/a32/test-assembler-cond-rd-memop-rs-a32.cc \
-  test/a32/test-assembler-cond-rd-memop-rs-shift-amount-1to31-a32.cc \
-  test/a32/test-assembler-cond-rd-memop-rs-shift-amount-1to32-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-const-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-const-t32.cc \
-  test/a32/test-assembler-cond-rd-operand-imm16-t32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-ror-amount-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-ror-amount-t32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-amount-1to31-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-amount-1to31-t32-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-amount-1to31-t32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-amount-1to32-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-amount-1to32-t32-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-amount-1to32-t32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-rs-a32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-rs-t32-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-rs-t32-narrow-out-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-shift-rs-t32.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-t32-identical-low-registers-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-t32-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-t32-low-registers-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-operand-rn-t32.cc \
-  test/a32/test-assembler-cond-rd-pc-operand-imm12-t32.cc \
-  test/a32/test-assembler-cond-rd-pc-operand-imm8-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-const-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-const-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-imm12-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-ror-amount-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-ror-amount-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to31-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to31-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to32-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to32-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-shift-rs-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-t32-all-low-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-t32-all-low-rd-is-rn-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-t32-rd-is-rn-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-t32-rd-is-rn-is-sp-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-t32-rn-is-sp-in-it-block.cc \
-  test/a32/test-assembler-cond-rd-rn-operand-rm-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-rm-a32.cc \
-  test/a32/test-assembler-cond-rd-rn-rm-t32.cc \
-  test/a32/test-assembler-cond-rd-rn-t32.cc \
-  test/a32/test-assembler-cond-rd-sp-operand-imm8-t32.cc \
-  test/a32/test-assembler-cond-rdlow-operand-imm8-t32-in-it-block.cc \
-  test/a32/test-assembler-cond-rdlow-operand-imm8-t32.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm3-in-it-block.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm3.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm8-in-it-block.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm8.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-zero-in-it-block.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-zero.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-rmlow-t32-in-it-block.cc \
-  test/a32/test-assembler-cond-rdlow-rnlow-rmlow-t32.cc \
-  test/a32/test-assembler-cond-sp-sp-operand-imm7-t32.cc \
-  test/a32/test-assembler-rd-rn-rm-a32.cc \
-  test/a32/test-assembler-rd-rn-rm-t32.cc \
-  test/a32/test-disasm-a32.cc \
-  test/a32/test-simulator-cond-rd-memop-immediate-512-a32.cc \
-  test/a32/test-simulator-cond-rd-memop-immediate-8192-a32.cc \
-  test/a32/test-simulator-cond-rd-memop-rs-a32.cc \
-  test/a32/test-simulator-cond-rd-memop-rs-shift-amount-1to31-a32.cc \
-  test/a32/test-simulator-cond-rd-memop-rs-shift-amount-1to32-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-const-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-const-t32.cc \
-  test/a32/test-simulator-cond-rd-operand-imm16-t32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-ror-amount-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-ror-amount-t32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-shift-amount-1to31-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-shift-amount-1to31-t32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-shift-amount-1to32-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-shift-amount-1to32-t32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-shift-rs-a32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-shift-rs-t32.cc \
-  test/a32/test-simulator-cond-rd-operand-rn-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-const-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-const-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-imm12-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-ror-amount-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-ror-amount-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to31-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to31-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to32-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to32-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-shift-rs-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-operand-rm-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-a32-ge.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-a32-q.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-a32-sel.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-a32.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-t32-ge.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-t32-q.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-t32-sel.cc \
-  test/a32/test-simulator-cond-rd-rn-rm-t32.cc \
-  test/a32/test-simulator-cond-rd-rn-t32.cc \
-  test/a32/test-simulator-cond-rdlow-operand-imm8-t32.cc \
-  test/a32/test-simulator-cond-rdlow-rnlow-operand-immediate-t32.cc \
-  test/a32/test-simulator-cond-rdlow-rnlow-rmlow-t32.cc \
-  test/a32/test-simulator-rd-rn-rm-a32.cc \
-  test/a32/test-simulator-rd-rn-rm-t32.cc \
-  test/a32/test-utils-a32.cc \
-  test/a64/test-assembler-a64.cc \
-  test/a64/test-disasm-a64.cc \
-  test/a64/test-fuzz-a64.cc \
-  test/a64/test-simulator-a64.cc \
-  test/a64/test-trace-a64.cc \
-  test/a64/test-utils-a64.cc \
+  test/aarch32/test-assembler-aarch32.cc \
+  test/aarch32/test-assembler-cond-rd-memop-immediate-512-a32.cc \
+  test/aarch32/test-assembler-cond-rd-memop-immediate-8192-a32.cc \
+  test/aarch32/test-assembler-cond-rd-memop-rs-a32.cc \
+  test/aarch32/test-assembler-cond-rd-memop-rs-shift-amount-1to31-a32.cc \
+  test/aarch32/test-assembler-cond-rd-memop-rs-shift-amount-1to32-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-const-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-const-t32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-imm16-t32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-ror-amount-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-ror-amount-t32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-amount-1to31-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-amount-1to31-t32-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-amount-1to31-t32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-amount-1to32-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-amount-1to32-t32-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-amount-1to32-t32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-rs-a32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-rs-t32-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-rs-t32-narrow-out-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-shift-rs-t32.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-t32-identical-low-registers-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-t32-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-t32-low-registers-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-operand-rn-t32.cc \
+  test/aarch32/test-assembler-cond-rd-pc-operand-imm12-t32.cc \
+  test/aarch32/test-assembler-cond-rd-pc-operand-imm8-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-const-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-const-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-imm12-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-ror-amount-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-ror-amount-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to31-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to31-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to32-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-shift-amount-1to32-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-shift-rs-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-t32-all-low-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-t32-all-low-rd-is-rn-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-t32-rd-is-rn-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-t32-rd-is-rn-is-sp-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-t32-rn-is-sp-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rd-rn-operand-rm-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-rm-a32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-rm-t32.cc \
+  test/aarch32/test-assembler-cond-rd-rn-t32.cc \
+  test/aarch32/test-assembler-cond-rd-sp-operand-imm8-t32.cc \
+  test/aarch32/test-assembler-cond-rdlow-operand-imm8-t32-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rdlow-operand-imm8-t32.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm3-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm3.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm8-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-imm8.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-zero-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-operand-immediate-t32-zero.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-rmlow-t32-in-it-block.cc \
+  test/aarch32/test-assembler-cond-rdlow-rnlow-rmlow-t32.cc \
+  test/aarch32/test-assembler-cond-sp-sp-operand-imm7-t32.cc \
+  test/aarch32/test-assembler-rd-rn-rm-a32.cc \
+  test/aarch32/test-assembler-rd-rn-rm-t32.cc \
+  test/aarch32/test-disasm-a32.cc \
+  test/aarch32/test-simulator-cond-rd-memop-immediate-512-a32.cc \
+  test/aarch32/test-simulator-cond-rd-memop-immediate-8192-a32.cc \
+  test/aarch32/test-simulator-cond-rd-memop-rs-a32.cc \
+  test/aarch32/test-simulator-cond-rd-memop-rs-shift-amount-1to31-a32.cc \
+  test/aarch32/test-simulator-cond-rd-memop-rs-shift-amount-1to32-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-const-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-const-t32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-imm16-t32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-ror-amount-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-ror-amount-t32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-shift-amount-1to31-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-shift-amount-1to31-t32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-shift-amount-1to32-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-shift-amount-1to32-t32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-shift-rs-a32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-shift-rs-t32.cc \
+  test/aarch32/test-simulator-cond-rd-operand-rn-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-const-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-const-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-imm12-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-ror-amount-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-ror-amount-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to31-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to31-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to32-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-shift-amount-1to32-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-shift-rs-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-operand-rm-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-a32-ge.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-a32-q.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-a32-sel.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-a32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-t32-ge.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-t32-q.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-t32-sel.cc \
+  test/aarch32/test-simulator-cond-rd-rn-rm-t32.cc \
+  test/aarch32/test-simulator-cond-rd-rn-t32.cc \
+  test/aarch32/test-simulator-cond-rdlow-operand-imm8-t32.cc \
+  test/aarch32/test-simulator-cond-rdlow-rnlow-operand-immediate-t32.cc \
+  test/aarch32/test-simulator-cond-rdlow-rnlow-rmlow-t32.cc \
+  test/aarch32/test-simulator-rd-rn-rm-a32.cc \
+  test/aarch32/test-simulator-rd-rn-rm-t32.cc \
+  test/aarch32/test-utils-aarch32.cc \
+  test/aarch64/test-abi.cc \
+  test/aarch64/test-assembler-aarch64.cc \
+  test/aarch64/test-disasm-aarch64.cc \
+  test/aarch64/test-fuzz-aarch64.cc \
+  test/aarch64/test-simulator-aarch64.cc \
+  test/aarch64/test-trace-aarch64.cc \
+  test/aarch64/test-utils-aarch64.cc \
   test/test-invalset.cc \
   test/test-runner.cc \
   test/test-utils.cc
@@ -241,13 +243,14 @@ ifeq ($(ART_COVERAGE), true)
   VIXL_COVERAGE := true
 endif
 
+# Shared libraries for target - arm64
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_release) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm64)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl-arm64
@@ -261,7 +264,7 @@ LOCAL_CPP_EXTENSION := .cc
 LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm64)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld-arm64
@@ -269,7 +272,7 @@ LOCAL_SANITIZE_RECOVER := shift-exponent
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 include $(BUILD_SHARED_LIBRARY)
 
-
+# Shared libraries for host - arm64
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
@@ -277,7 +280,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_release) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm64)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl-arm64
@@ -293,7 +296,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm64)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld-arm64
@@ -302,7 +305,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MULTILIB := both
 include $(BUILD_HOST_SHARED_LIBRARY)
 
-# Static libraries for host
+# Static libraries for host - arm64
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
@@ -310,7 +313,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_release) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm64)
 LOCAL_STATIC_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl-arm64
@@ -326,7 +329,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm64)
 LOCAL_STATIC_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld-arm64
@@ -335,6 +338,36 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MULTILIB := both
 include $(BUILD_HOST_STATIC_LIBRARY)
 
+# Shared libraries for target - arm
+include $(CLEAR_VARS)
+LOCAL_CLANG := true
+LOCAL_CPP_EXTENSION := .cc
+LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
+LOCAL_C_INCLUDES := $(vixl_src_include_path)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm)
+LOCAL_SHARED_LIBRARIES := liblog
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libvixl-arm
+LOCAL_SANITIZE_RECOVER := shift-exponent
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_CLANG := true
+LOCAL_CPP_EXTENSION := .cc
+LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
+LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
+LOCAL_C_INCLUDES := $(vixl_src_include_path)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm)
+LOCAL_SHARED_LIBRARIES := liblog
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libvixld-arm
+LOCAL_SANITIZE_RECOVER := shift-exponent
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
+include $(BUILD_SHARED_LIBRARY)
+
+# Shared libraries for host - arm
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
@@ -342,7 +375,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a32)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl-arm
@@ -358,7 +391,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a32)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm)
 LOCAL_SHARED_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld-arm
@@ -367,7 +400,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MULTILIB := both
 include $(BUILD_HOST_SHARED_LIBRARY)
 
-# Static libraries for host
+# Static libraries for host - arm
 include $(CLEAR_VARS)
 LOCAL_CLANG := true
 LOCAL_CPP_EXTENSION := .cc
@@ -375,7 +408,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_release)
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a32)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm)
 LOCAL_STATIC_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixl-arm
@@ -391,7 +424,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug)
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_src_include_path)
-LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_a32)
+LOCAL_SRC_FILES :=  $(vixl_common_files) $(vixl_src_files_arm)
 LOCAL_STATIC_LIBRARIES := liblog
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libvixld-arm
@@ -413,7 +446,7 @@ LOCAL_CPPFLAGS := $(vixl_cpp_flags_debug) -DVIXL_INCLUDE_SIMULATOR
 LOCAL_CLANG_CFLAGS := -Wimplicit-fallthrough
 LOCAL_NATIVE_COVERAGE := $(VIXL_COVERAGE)
 LOCAL_C_INCLUDES := $(vixl_test_include_path)
-LOCAL_SRC_FILES :=  $(vixl_test_files) $(vixl_common_files) $(vixl_src_files_a32) $(vixl_src_files_a64)
+LOCAL_SRC_FILES :=  $(vixl_test_files) $(vixl_common_files) $(vixl_src_files_arm) $(vixl_src_files_arm64)
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_HOST_ARCH := x86_64
 LOCAL_FORCE_STATIC_EXECUTABLE := true

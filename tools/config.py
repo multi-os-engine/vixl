@@ -1,4 +1,4 @@
-# Copyright 2015, ARM Limited
+# Copyright 2015, VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,16 +27,17 @@
 import os
 
 # These paths describe the structure of the repository.
-dir_tools          = os.path.dirname(os.path.realpath(__file__))
-dir_root           = os.path.abspath(os.path.join(dir_tools, '..'))
-dir_build          = os.path.join(dir_root, 'obj')
-dir_build_latest   = os.path.join(dir_build, 'latest')
-dir_src_vixl       = os.path.join(dir_root, 'src')
-dir_tests          = os.path.join(dir_root, 'test')
-dir_a64_benchmarks = os.path.join(dir_root, 'benchmarks/a64')
-dir_a32_benchmarks = os.path.join(dir_root, 'benchmarks/a32')
-dir_a64_examples   = os.path.join(dir_root, 'examples/a64')
-dir_a32_examples   = os.path.join(dir_root, 'examples/a32')
+dir_tools              = os.path.dirname(os.path.realpath(__file__))
+dir_root               = os.path.abspath(os.path.join(dir_tools, '..'))
+dir_build              = os.path.join(dir_root, 'obj')
+dir_build_latest       = os.path.join(dir_build, 'latest')
+dir_src_vixl           = os.path.join(dir_root, 'src')
+dir_tests              = os.path.join(dir_root, 'test')
+dir_aarch64_benchmarks = os.path.join(dir_root, 'benchmarks', 'aarch64')
+dir_aarch64_examples   = os.path.join(dir_root, 'examples', 'aarch64')
+dir_aarch32_examples   = os.path.join(dir_root, 'examples', 'aarch32')
+dir_aarch64_traces     = os.path.join(dir_tests, 'aarch64', 'traces')
+dir_aarch32_traces     = os.path.join(dir_tests, 'aarch32', 'traces')
 
 
 # The full list of available build modes.
@@ -44,6 +45,6 @@ build_options_modes = ['release', 'debug']
 # The list of C++ standard to test for.
 tested_cpp_standards = ['c++98', 'c++11']
 # The list of compilers tested.
-tested_compilers = ['g++', 'clang++']
+tested_compilers = ['clang++', 'g++']
 
 
