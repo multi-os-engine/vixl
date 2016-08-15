@@ -1,4 +1,4 @@
-// Copyright 2014, ARM Limited
+// Copyright 2014, VIXL authors
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,9 @@ namespace vixl {
 
 class CodeBuffer {
  public:
-  explicit CodeBuffer(size_t capacity = 4 * KBytes);
+  static const size_t kDefaultCapacity = 4 * KBytes;
+
+  explicit CodeBuffer(size_t capacity = kDefaultCapacity);
   CodeBuffer(void* buffer, size_t capacity);
   ~CodeBuffer();
 
@@ -78,6 +80,13 @@ class CodeBuffer {
   }
 
   byte* GetBuffer() const { return GetOffsetAddress<byte*>(0); }
+
+  // Return the address of the start of the buffer.
+  template <typename T>
+  T GetStartAddress() const {
+    VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
+    return GetOffsetAddress<T>(0);
+  }
 
   size_t GetSizeInBytes() const {
     VIXL_ASSERT((cursor_ >= buffer_) && (cursor_ <= (buffer_ + capacity_)));

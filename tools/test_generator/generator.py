@@ -1,4 +1,4 @@
-# Copyright 2016, ARM Limited
+# Copyright 2016, VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -452,14 +452,14 @@ class Generator(object):
   def IncludeTraceFiles(self):
     """
     ~~~
-    #include "a32/traces/sim-...-a32.h"
-    #include "a32/traces/sim-...-a32.h"
+    #include "aarch32/traces/sim-...-a32.h"
+    #include "aarch32/traces/sim-...-a32.h"
     ...
     ~~~
     """
     operands = "-".join(self.operands.GetNames())
     return "".join([
-        "#include \"a32/traces/" + self.GetTraceFileName(mnemonic) + "\"\n"
+        "#include \"aarch32/traces/" + self.GetTraceFileName(mnemonic) + "\"\n"
         for mnemonic in self.mnemonics
     ])
 
@@ -479,9 +479,9 @@ class Generator(object):
     Generate code to set the ISA.
     """
     if self.test_isa == "t32":
-      return "masm.SetT32(true);"
+      return "masm.UseT32();"
     else:
-      return "masm.SetT32(false);"
+      return "masm.UseA32();"
 
   def CodeInstantiateOperands(self):
     """
@@ -650,5 +650,5 @@ class Generator(object):
     for mnemonic in self.mnemonics:
       with open(os.path.join(output_directory, self.GetTraceFileName(mnemonic)),
                 "w") as f:
-        code = "static const TestResult *kReference{} = NULL;"
+        code = "static const TestResult *kReference{} = NULL;\n"
         f.write(code.format(mnemonic))

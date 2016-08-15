@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7
 
-# Copyright 2016, ARM Limited
+# Copyright 2016, VIXL authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -174,10 +174,9 @@ def Find(path, filters = ['*']):
 
 def GetCppSourceFilesToFormat():
   sources = []
-  source_dirs = [config.dir_a32_benchmarks,
-                 config.dir_a32_examples,
-                 config.dir_a64_benchmarks,
-                 config.dir_a64_examples,
+  source_dirs = [config.dir_aarch32_examples,
+                 config.dir_aarch64_benchmarks,
+                 config.dir_aarch64_examples,
                  config.dir_src_vixl ]
   for directory in source_dirs:
     sources += Find(directory, ['*.h', '*.cc'])
