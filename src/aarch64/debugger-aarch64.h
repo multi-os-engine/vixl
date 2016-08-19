@@ -24,15 +24,14 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef VIXL_INCLUDE_SIMULATOR
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 
 #ifndef VIXL_AARCH64_DEBUGGER_AARCH64_H_
 #define VIXL_AARCH64_DEBUGGER_AARCH64_H_
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
-
+#include <cctype>
+#include <cerrno>
+#include <climits>
 #include <vector>
 
 #include "globals-vixl.h"
@@ -107,4 +106,4 @@ class Debugger : public Simulator {
 
 #endif  // VIXL_AARCH64_DEBUGGER_AARCH64_H_
 
-#endif  // VIXL_INCLUDE_SIMULATOR
+#endif  // VIXL_INCLUDE_SIMULATOR_AARCH64
