@@ -40,14 +40,16 @@
 #define __STDC_FORMAT_MACROS
 #endif
 
-#include <assert.h>
+extern "C" {
 #include <inttypes.h>
-#include <stdarg.h>
-#include <stddef.h>
 #include <stdint.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
+}
+
+#include <cassert>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 
 #include "platform-vixl.h"
 
@@ -173,16 +175,29 @@ inline void USE(const T1&, const T2&, const T3&, const T4&) {}
 #define VIXL_DEBUG_NO_RETURN
 #endif
 
-#ifdef VIXL_INCLUDE_SIMULATOR
-#ifndef VIXL_GENERATE_SIMULATOR_CODE
-#define VIXL_GENERATE_SIMULATOR_CODE 1
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
+#ifndef VIXL_AARCH64_GENERATE_SIMULATOR_CODE
+#define VIXL_AARCH64_GENERATE_SIMULATOR_CODE 1
 #endif
 #else
-#ifndef VIXL_GENERATE_SIMULATOR_CODE
-#define VIXL_GENERATE_SIMULATOR_CODE 0
+#ifndef VIXL_AARCH64_GENERATE_SIMULATOR_CODE
+#define VIXL_AARCH64_GENERATE_SIMULATOR_CODE 0
 #endif
-#if VIXL_GENERATE_SIMULATOR_CODE
+#if VIXL_AARCH64_GENERATE_SIMULATOR_CODE
 #warning "Generating Simulator instructions without Simulator support."
+#endif
+#endif
+
+// We do not have a simulator for AArch32, although we can pretend we do so that
+// tests that require running natively can be skipped.
+#ifndef __arm__
+#define VIXL_INCLUDE_SIMULATOR_AARCH32
+#ifndef VIXL_AARCH32_GENERATE_SIMULATOR_CODE
+#define VIXL_AARCH32_GENERATE_SIMULATOR_CODE 1
+#endif
+#else
+#ifndef VIXL_AARCH32_GENERATE_SIMULATOR_CODE
+#define VIXL_AARCH32_GENERATE_SIMULATOR_CODE 0
 #endif
 #endif
 

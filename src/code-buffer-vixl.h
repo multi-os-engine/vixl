@@ -27,7 +27,7 @@
 #ifndef VIXL_CODE_BUFFER_H
 #define VIXL_CODE_BUFFER_H
 
-#include <string.h>
+#include <cstring>
 
 #include "globals-vixl.h"
 #include "utils-vixl.h"
@@ -106,6 +106,8 @@ class CodeBuffer {
   void EmitString(const char* string);
 
   void EmitData(const void* data, size_t size);
+
+  void UpdateData(size_t offset, const void* data, size_t size);
 
   // Align to 32bit.
   void Align();

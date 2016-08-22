@@ -24,12 +24,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <float.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cfloat>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "test-runner.h"
 #include "test-utils-aarch64.h"
@@ -43,7 +42,7 @@
 namespace vixl {
 namespace aarch64 {
 // Trace tests can only work with the simulator.
-#ifdef VIXL_INCLUDE_SIMULATOR
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 
 #define __ masm->
 #define TEST(name) TEST_(TRACE_##name)
@@ -2718,6 +2717,6 @@ TEST(all_colour) {
 }
 
 
-#endif  // VIXL_INCLUDE_SIMULATOR
+#endif  // VIXL_INCLUDE_SIMULATOR_AARCH64
 }  // namespace aarch64
 }  // namespace vixl

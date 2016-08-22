@@ -24,10 +24,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef VIXL_INCLUDE_SIMULATOR
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 
-#include <string.h>
-
+#include <cstring>
 #include <cmath>
 
 #include "aarch64/simulator-aarch64.h"
@@ -5341,4 +5340,4 @@ void Simulator::DoRuntimeCall(const Instruction* instr) {
 }  // namespace aarch64
 }  // namespace vixl
 
-#endif  // VIXL_INCLUDE_SIMULATOR
+#endif  // VIXL_INCLUDE_SIMULATOR_AARCH64

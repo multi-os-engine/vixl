@@ -35,7 +35,10 @@
 #include "aarch64/assembler-aarch64.h"
 #include "aarch64/debugger-aarch64.h"
 #include "aarch64/instrument-aarch64.h"
-#include "aarch64/simulator-aarch64.h"
+// Required in order to generate debugging instructions for the simulator. This
+// is needed regardless of whether the simulator is included or not, since
+// generating simulator specific instructions is controlled at runtime.
+#include "aarch64/simulator-constants-aarch64.h"
 
 
 #define LS_MACRO_LIST(V)                                     \
@@ -3028,11 +3031,16 @@ class MacroAssembler : public Assembler {
 
 // Support for simulated runtime calls.
 
-// Variadic templating is only available from C++11.
+// `CallRuntime` requires variadic templating, that is only available from
+// C++11.
 #if __cplusplus >= 201103L
+#define VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
+#endif  // #if __cplusplus >= 201103L
+
+#ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
   template <typename R, typename... P>
   void CallRuntime(R (*function)(P...));
-#endif
+#endif  // #ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
 
  protected:
   // Helper used to query information about code generation and to generate
@@ -3379,7 +3387,7 @@ class UseScratchRegisterScope {
 };
 
 // Variadic templating is only available from C++11.
-#if __cplusplus >= 201103L
+#ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
 
 // `R` stands for 'return type', and `P` for 'parameter types'.
 template <typename R, typename... P>
@@ -3404,7 +3412,7 @@ void MacroAssembler::CallRuntime(R (*function)(P...)) {
                 kRuntimeCallFunctionOffset + kRuntimeCallAddressSize);
 #else
     VIXL_UNREACHABLE();
-#endif
+#endif  // #ifdef VIXL_HAS_SIMULATED_RUNTIME_CALL_SUPPORT
   } else {
     UseScratchRegisterScope temps(this);
     Register temp = temps.AcquireX();
@@ -3413,7 +3421,7 @@ void MacroAssembler::CallRuntime(R (*function)(P...)) {
   }
 }
 
-#endif
+#endif  // #ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
 
 }  // namespace aarch64
 
