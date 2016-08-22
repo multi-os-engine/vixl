@@ -24,12 +24,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <float.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cfloat>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "test-runner.h"
 #include "test-utils.h"
@@ -96,7 +95,7 @@ namespace aarch64 {
 #define __ masm.
 #define TEST(name)  TEST_(AARCH64_ASM_##name)
 
-#ifdef VIXL_INCLUDE_SIMULATOR
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 // Run tests with the simulator.
 
 #define SETUP()                                                                \
@@ -163,7 +162,7 @@ namespace aarch64 {
 #define TEARDOWN_COMMON()                                                      \
   delete simulator;
 
-#else  // ifdef VIXL_INCLUDE_SIMULATOR.
+#else  // ifdef VIXL_INCLUDE_SIMULATOR_AARCH64.
 // Run the test on real hardware or models.
 #define SETUP()                                                                \
   MacroAssembler masm;                                                         \
@@ -212,7 +211,7 @@ namespace aarch64 {
 
 #define TEARDOWN_CUSTOM()
 
-#endif  // ifdef VIXL_INCLUDE_SIMULATOR.
+#endif  // ifdef VIXL_INCLUDE_SIMULATOR_AARCH64.
 
 #define ASSERT_EQUAL_NZCV(expected)                                            \
   assert(EqualNzcv(expected, core.flags_nzcv()))
@@ -14370,7 +14369,7 @@ TEST(printf_no_preserve) {
 }
 
 
-#ifndef VIXL_INCLUDE_SIMULATOR
+#ifndef VIXL_INCLUDE_SIMULATOR_AARCH64
 TEST(trace) {
   // The Trace helper should not generate any code unless the simulator (or
   // debugger) is being used.
@@ -14389,7 +14388,7 @@ TEST(trace) {
 #endif
 
 
-#ifndef VIXL_INCLUDE_SIMULATOR
+#ifndef VIXL_INCLUDE_SIMULATOR_AARCH64
 TEST(log) {
   // The Log helper should not generate any code unless the simulator (or
   // debugger) is being used.
@@ -15464,7 +15463,7 @@ TEST(clrex) {
 }
 
 
-#ifdef VIXL_INCLUDE_SIMULATOR
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 // Check that the simulator occasionally makes store-exclusive fail.
 TEST(ldxr_stxr_fail) {
   uint64_t data[] = {0, 0, 0};
@@ -15548,7 +15547,7 @@ TEST(ldxr_stxr_fail) {
 #endif
 
 
-#ifdef VIXL_INCLUDE_SIMULATOR
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 // Check that the simulator occasionally makes store-exclusive fail.
 TEST(ldaxr_stlxr_fail) {
   uint64_t data[] = {0, 0, 0};
@@ -22238,23 +22237,22 @@ void runtime_call_store_at_address(int64_t* address) {
   *address = 0xf00d;
 }
 
+// Test feature detection of calls to runtime functions.
 
-// C++11 should be sufficient to provide support for ABI and simulated runtime
-// calls, except that a GCC bug before 4.9.1 prevents the use of simulated
-// runtime calls.
-#if (__cplusplus >= 201103L) && !defined(VIXL_HAS_ABI_SUPPORT)
-#error "C++11 should be sufficient to provide ABI support."
-#endif
-
-#if (__cplusplus >= 201103L) && \
-    (defined(__clang__) || GCC_VERSION_OR_NEWER(4, 9, 1)) && \
+// C++11 should be sufficient to provide simulated runtime calls, except for a
+// GCC bug before 4.9.1.
+#if defined(VIXL_INCLUDE_SIMULATOR_AARCH64) && (__cplusplus >= 201103L) && \
+    (defined(__clang__) || GCC_VERSION_OR_NEWER(4, 9, 1)) &&               \
     !defined(VIXL_HAS_SIMULATED_RUNTIME_CALL_SUPPORT)
 #error "C++11 should be sufficient to provide support for simulated runtime calls."
-#endif
+#endif  // #if defined(VIXL_INCLUDE_SIMULATOR_AARCH64) && ...
 
+#if (__cplusplus >= 201103L) && \
+    !defined(VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT)
+#error "C++11 should be sufficient to provide support for `MacroAssembler::CallRuntime()`."
+#endif  // #if (__cplusplus >= 201103L) && ...
 
-#if defined(VIXL_HAS_SIMULATED_RUNTIME_CALL_SUPPORT) || \
-    !defined(VIXL_INCLUDE_SIMULATOR)
+#ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
 TEST(runtime_calls) {
   SETUP();
 
@@ -22288,6 +22286,8 @@ TEST(runtime_calls) {
 
   END();
 
+#if defined(VIXL_HAS_SIMULATED_RUNTIME_CALL_SUPPORT) || \
+    !defined(VIXL_INCLUDE_SIMULATOR_AARCH64)
   RUN();
 
   ASSERT_EQUAL_32(1, w20);
@@ -22295,10 +22295,11 @@ TEST(runtime_calls) {
   ASSERT_EQUAL_64(0x123, x21);
   ASSERT_EQUAL_FP64(310.0, d21);
   VIXL_CHECK(value == 0xf00d);
+#endif  // #if defined(VIXL_HAS_SIMULATED_RUNTIME_CALL_SUPPORT) || ...
 
   TEARDOWN();
 }
-#endif
+#endif  // #ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
 
 
 }  // namespace aarch64
