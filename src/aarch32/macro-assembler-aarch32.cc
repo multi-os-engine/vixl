@@ -431,8 +431,21 @@ void MacroAssembler::EndSwitch(JumpTableBase* table) { table->Finalize(this); }
 void MacroAssembler::HandleOutOfBoundsImmediate(Condition cond,
                                                 Register tmp,
                                                 uint32_t imm) {
-  // Immediate is too large, so handle using a temporary
-  // register
+  if (IsUintN(16, imm)) {
+    Mov(cond, tmp, imm & 0xffff);
+    return;
+  }
+  if (IsUsingT32()) {
+    if (ImmediateT32::IsImmediateT32(~imm)) {
+      Mvn(cond, tmp, ~imm);
+      return;
+    }
+  } else {
+    if (ImmediateA32::IsImmediateA32(~imm)) {
+      Mvn(cond, tmp, ~imm);
+      return;
+    }
+  }
   Mov(cond, tmp, imm & 0xffff);
   Movt(cond, tmp, imm >> 16);
 }
@@ -561,8 +574,8 @@ void MacroAssembler::Printf(const char* format,
         kCallerSavedRegistersMask | (1 << r5.GetCode());
     Push(RegisterList(saved_registers_mask));
     // Push VFP registers.
-    Vpush(Untyped64, DRegisterList(d0, d7));
-    if (Has32DRegs()) Vpush(Untyped64, DRegisterList(d16, d31));
+    Vpush(Untyped64, DRegisterList(d0, 8));
+    if (Has32DRegs()) Vpush(Untyped64, DRegisterList(d16, 16));
     // Search one register which has been saved and which doesn't need to be
     // printed.
     RegisterList available_registers(kCallerSavedRegistersMask);
@@ -681,8 +694,8 @@ void MacroAssembler::Printf(const char* format,
     Pop(tmp);
     Msr(APSR_nzcvqg, tmp);
     // Restore the regsisters.
-    if (Has32DRegs()) Vpop(Untyped64, DRegisterList(d16, d31));
-    Vpop(Untyped64, DRegisterList(d0, d7));
+    if (Has32DRegs()) Vpop(Untyped64, DRegisterList(d16, 16));
+    Vpop(Untyped64, DRegisterList(d0, 8));
     Pop(RegisterList(saved_registers_mask));
   }
 }
@@ -1125,7 +1138,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               Label* label) {
   // cbz cbnz
   ContextScope context(this);
-  if (IsUsingT32()) {
+  if (IsUsingT32() && rn.IsLow()) {
     switch (type) {
       case kCbnz: {
         Label done;
