@@ -62,10 +62,6 @@ bool Shift::IsValidAmount(uint32_t amount) const {
 
 std::ostream& operator<<(std::ostream& os, const Register reg) {
   switch (reg.GetCode()) {
-    case 10:
-      return os << "sl";
-    case 11:
-      return os << "fp";
     case 12:
       return os << "ip";
     case 13:
@@ -128,16 +124,6 @@ std::ostream& PrintRegisterList(std::ostream& os, uint32_t list) {  // NOLINT
 
 
 std::ostream& operator<<(std::ostream& os, RegisterList registers) {
-  return PrintRegisterList(os, registers.GetList());
-}
-
-
-std::ostream& operator<<(std::ostream& os, RegisterListWithPC registers) {
-  return PrintRegisterList(os, registers.GetList() | (1 << kPcCode));
-}
-
-
-std::ostream& operator<<(std::ostream& os, RegisterListWithoutPC registers) {
   return PrintRegisterList(os, registers.GetList());
 }
 
