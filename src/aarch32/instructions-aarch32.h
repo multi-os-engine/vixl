@@ -113,6 +113,12 @@ class CPURegister {
   RegisterType GetType() const {
     return static_cast<RegisterType>((value_ & kTypeMask) >> kTypeShift);
   }
+  bool IsRegister() const { return GetType() == kRRegister; }
+  bool IsS() const { return GetType() == kSRegister; }
+  bool IsD() const { return GetType() == kDRegister; }
+  bool IsQ() const { return GetType() == kQRegister; }
+  bool IsVRegister() const { return IsS() || IsD() || IsQ(); }
+  bool IsFPRegister() const { return IsS() || IsD(); }
   uint32_t GetCode() const { return (value_ & kCodeMask) >> kCodeShift; }
   uint32_t GetReg() const { return value_; }
   int GetSizeInBits() const { return (value_ & kSizeMask) >> kSizeShift; }
@@ -381,14 +387,14 @@ inline std::ostream& operator<<(std::ostream& os, const QRegister reg) {
 }
 
 // clang-format off
-#define REGISTER_CODE_LIST(R)                                                  \
+#define AARCH32_REGISTER_CODE_LIST(R)                                          \
   R(0)  R(1)  R(2)  R(3)  R(4)  R(5)  R(6)  R(7)                               \
   R(8)  R(9)  R(10) R(11) R(12) R(13) R(14) R(15)
 // clang-format on
 #define DEFINE_REGISTER(N) const Register r##N(N);
-REGISTER_CODE_LIST(DEFINE_REGISTER)
+AARCH32_REGISTER_CODE_LIST(DEFINE_REGISTER)
 #undef DEFINE_REGISTER
-#undef REGISTER_CODE_LIST
+#undef AARCH32_REGISTER_CODE_LIST
 
 enum RegNum { kIPRegNum = 12, kSPRegNum = 13, kLRRegNum = 14, kPCRegNum = 15 };
 
@@ -626,7 +632,7 @@ class SRegisterList {
   }
   const SRegister& GetFirstSRegister() const { return first_; }
   const SRegister GetLastSRegister() const {
-    return SRegister(first_.GetCode() + length_ - 1);
+    return SRegister((first_.GetCode() + length_ - 1) % kNumberOfSRegisters);
   }
   int GetLength() const { return length_; }
 };
@@ -645,7 +651,7 @@ class DRegisterList {
   }
   const DRegister& GetFirstDRegister() const { return first_; }
   const DRegister GetLastDRegister() const {
-    return DRegister(first_.GetCode() + length_ - 1);
+    return DRegister((first_.GetCode() + length_ - 1) % kMaxNumberOfDRegisters);
   }
   int GetLength() const { return length_; }
 };
@@ -1361,13 +1367,6 @@ class Literal<const char*> : public RawLiteral {
   explicit Literal(const char* str,
                    DeletionPolicy deletion_policy = kManuallyDeleted)
       : RawLiteral(str, strlen(str) + 1, deletion_policy) {}
-};
-
-class Instructions {
- public:
-  Instructions() {}
-  // Start of generated code.
-  // End of generated code.
 };
 
 }  // namespace aarch32

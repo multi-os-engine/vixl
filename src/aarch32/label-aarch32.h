@@ -31,9 +31,12 @@ extern "C" {
 #include <stdint.h>
 }
 
+#include <algorithm>
 #include <cstddef>
 #include <iomanip>
 #include <list>
+
+#include "utils-vixl.h"
 
 namespace vixl {
 namespace aarch32 {
@@ -94,7 +97,7 @@ class Label {
   }
 
   Offset GetNextCheckpoint() {
-    if (!forward_.empty()) {
+    if (IsReferenced()) {
       ForwardRefList::iterator min_checkpoint =
           std::min_element(forward_.begin(),
                            forward_.end(),
@@ -123,12 +126,14 @@ class Label {
         checkpoint_(kMaxOffset) {}
   ~Label() {}
   bool IsBound() const { return is_bound_; }
+  bool IsReferenced() const { return !forward_.empty(); }
   void Bind(Offset offset, bool isT32) {
     VIXL_ASSERT(!IsBound());
     imm_offset_ = offset;
     is_bound_ = true;
     is_t32_ = isT32;
   }
+  uint32_t GetPcOffset() const { return pc_offset_; }
   Offset GetLocation() const {
     VIXL_ASSERT(IsBound());
     return imm_offset_ + static_cast<Offset>(pc_offset_);
@@ -165,7 +170,7 @@ class Label {
   ForwardReference& GetBackForwardRef() { return forward_.back(); }
 
   Offset GetLastInsertForwardDistance() const {
-    if (!forward_.empty()) {
+    if (IsReferenced()) {
       return forward_.back().GetMaxForwardDistance();
     }
     return kMaxOffset;
@@ -182,7 +187,7 @@ class Label {
   void InvalidateLastForwardReference(
       UpdateCheckpointOption update_checkpoint = kRecomputeCheckpoint) {
     if (!IsBound()) {
-      VIXL_ASSERT(!forward_.empty());
+      VIXL_ASSERT(IsReferenced());
       forward_.pop_back();
     }
     VIXL_ASSERT((update_checkpoint == kNoUpdateNecessary) &&
@@ -200,7 +205,7 @@ class Label {
   // The last forward reference is assumed to be the one freshly
   // added regarding this literal.
   void UpdateCheckpoint() {
-    if (!forward_.empty()) {
+    if (IsReferenced()) {
       const ForwardReference& ref = forward_.back();
       checkpoint_ = std::min(checkpoint_, ref.GetCheckpoint());
     }
