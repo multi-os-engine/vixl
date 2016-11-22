@@ -93,6 +93,16 @@ options = {
     'mode:release' : {
       'CCFLAGS' : ['-O3'],
       },
+    'target_arch:aarch32' : {
+      'CCFLAGS' : ['-DVIXL_INCLUDE_TARGET_AARCH32']
+      },
+    'target_arch:aarch64' : {
+      'CCFLAGS' : ['-DVIXL_INCLUDE_TARGET_AARCH64']
+      },
+    'target_arch:both' : {
+      'CCFLAGS' : ['-DVIXL_INCLUDE_TARGET_AARCH32',
+                   '-DVIXL_INCLUDE_TARGET_AARCH64']
+      },
     'simulator:aarch64' : {
       'CCFLAGS' : ['-DVIXL_INCLUDE_SIMULATOR_AARCH64'],
       },
@@ -100,6 +110,9 @@ options = {
       'CCFLAGS' : ['-g'],
       'LINKFLAGS' : ['-g']
       },
+    'negative_testing:on' : {
+      'CCFLAGS' : ['-DVIXL_NEGATIVE_TESTING']
+      }
     }
 
 
@@ -173,6 +186,8 @@ vars = Variables()
 vars.AddVariables(
     EnumVariable('mode', 'Build mode',
                  'release', allowed_values=config.build_options_modes),
+    EnumVariable('negative_testing', 'Enable negative testing (needs exceptions)',
+                 'off', allowed_values=['on', 'off']),
     DefaultVariable('symbols', 'Include debugging symbols in the binaries',
                     ['on', 'off']),
     DefaultVariable('target_arch', 'Target architecture',
@@ -182,18 +197,12 @@ vars.AddVariables(
                                          ', '.join(config.tested_cpp_standards))
     )
 
-# Abort the build if any command line option is unknown or invalid.
-unknown_build_options = vars.UnknownVariables()
-if unknown_build_options:
-  print 'Unknown build options:',  unknown_build_options.keys()
-  Exit(1)
-
 # We use 'variant directories' to avoid recompiling multiple times when build
 # options are changed, different build paths are used depending on the options
 # set. These are the options that should be reflected in the build directory
 # path.
 options_influencing_build_path = [
-  'target_arch', 'mode', 'symbols', 'CXX', 'std', 'simulator'
+  'target_arch', 'mode', 'symbols', 'CXX', 'std', 'simulator', 'negative_testing'
 ]
 
 
@@ -242,9 +251,8 @@ def ProcessBuildOptions(env):
 
 
 def ConfigureEnvironmentForCompiler(env):
-  def is_compiler(compiler):
-    return env['CXX'].find(compiler) == 0
-  if is_compiler('clang++'):
+  compiler = util.CompilerInformation(env['CXX'])
+  if compiler == 'clang':
     # These warnings only work for Clang.
     # -Wimplicit-fallthrough only works when compiling the code base as C++11 or
     # newer. The compiler does not complain if the option is passed when
@@ -252,31 +260,26 @@ def ConfigureEnvironmentForCompiler(env):
     env.Append(CPPFLAGS = ['-Wimplicit-fallthrough', '-Wshorten-64-to-32'])
 
     # The '-Wunreachable-code' flag breaks builds for clang 3.4.
-    process = subprocess.Popen(env['CXX'] + ' --version | grep "clang.*3\.4"',
-                               shell = True,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    stdout, stderr = process.communicate()
-    using_clang3_4 = stdout != ''
-    if not using_clang3_4:
+    if compiler != 'clang-3.4':
       env.Append(CPPFLAGS = ['-Wunreachable-code'])
-
-    env.Append(CPPFLAGS = ['-Wno-shorten-64-to-32'])
 
   # GCC 4.8 has a bug which produces a warning saying that an anonymous Operand
   # object might be used uninitialized:
   #   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=57045
   # The bug does not seem to appear in GCC 4.7, or in debug builds with GCC 4.8.
   if env['mode'] == 'release':
-    process = subprocess.Popen(env['CXX'] + ' --version 2>&1 | grep "g++.*4\.8"',
-                               shell = True,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    stdout, unused = process.communicate()
-    using_gcc48 = stdout != ''
-    if using_gcc48:
+    if compiler == 'gcc-4.8':
       env.Append(CPPFLAGS = ['-Wno-maybe-uninitialized'])
+
   # When compiling with c++98 (the default), allow long long constants.
   if 'std' not in env or env['std'] == 'c++98':
     env.Append(CPPFLAGS = ['-Wno-long-long'])
+  # When compiling with c++11, suggest missing override keywords on methods.
+  if 'std' in env and env['std'] in ['c++11', 'c++14']:
+    if compiler >= 'gcc-5':
+      env.Append(CPPFLAGS = ['-Wsuggest-override'])
+    elif compiler >= 'clang-3.6':
+      env.Append(CPPFLAGS = ['-Winconsistent-missing-override'])
 
 
 def ConfigureEnvironment(env):
@@ -329,6 +332,12 @@ def VIXLLibraryTarget(env):
 
 # The VIXL library, built by default.
 env = Environment(variables = vars)
+# Abort the build if any command line option is unknown or invalid.
+unknown_build_options = vars.UnknownVariables()
+if unknown_build_options:
+  print 'Unknown build options:',  unknown_build_options.keys()
+  Exit(1)
+
 ConfigureEnvironment(env)
 Help(vars.GenerateHelpText(env))
 libvixl = VIXLLibraryTarget(env)

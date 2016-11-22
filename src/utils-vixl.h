@@ -83,25 +83,29 @@ VIXL_DEPRECATED("IsUintN", inline bool is_uintn(unsigned n, int64_t x)) {
   return IsUintN(n, x);
 }
 
-inline uint32_t TruncateToIntN(unsigned n, int64_t x) {
+inline uint64_t TruncateToUintN(unsigned n, uint64_t x) {
   VIXL_ASSERT((0 < n) && (n < 64));
-  return static_cast<uint32_t>(x & ((INT64_C(1) << n) - 1));
+  return static_cast<uint64_t>(x) & ((UINT64_C(1) << n) - 1);
 }
-VIXL_DEPRECATED("TruncateToIntN",
-                inline uint32_t truncate_to_intn(unsigned n, int64_t x)) {
-  return TruncateToIntN(n, x);
+VIXL_DEPRECATED("TruncateToUintN",
+                inline uint64_t truncate_to_intn(unsigned n, int64_t x)) {
+  return TruncateToUintN(n, x);
 }
 
 // clang-format off
-#define INT_1_TO_63_LIST(V)                                                    \
+#define INT_1_TO_32_LIST(V)                                                    \
 V(1)  V(2)  V(3)  V(4)  V(5)  V(6)  V(7)  V(8)                                 \
 V(9)  V(10) V(11) V(12) V(13) V(14) V(15) V(16)                                \
 V(17) V(18) V(19) V(20) V(21) V(22) V(23) V(24)                                \
-V(25) V(26) V(27) V(28) V(29) V(30) V(31) V(32)                                \
+V(25) V(26) V(27) V(28) V(29) V(30) V(31) V(32)
+
+#define INT_33_TO_63_LIST(V)                                                   \
 V(33) V(34) V(35) V(36) V(37) V(38) V(39) V(40)                                \
 V(41) V(42) V(43) V(44) V(45) V(46) V(47) V(48)                                \
 V(49) V(50) V(51) V(52) V(53) V(54) V(55) V(56)                                \
 V(57) V(58) V(59) V(60) V(61) V(62) V(63)
+
+#define INT_1_TO_63_LIST(V) INT_1_TO_32_LIST(V) INT_33_TO_63_LIST(V)
 
 // clang-format on
 
@@ -117,37 +121,76 @@ V(57) V(58) V(59) V(60) V(61) V(62) V(63)
     return IsUintN(N, x);                                           \
   }
 
-#define DECLARE_TRUNCATE_TO_INT_N(N)                                       \
-  inline uint32_t TruncateToInt##N(int x) { return TruncateToIntN(N, x); } \
-  VIXL_DEPRECATED("TruncateToInt" #N,                                      \
-                  inline bool truncate_to_int##N(int64_t x)) {             \
-    return TruncateToIntN(N, x);                                           \
+#define DECLARE_TRUNCATE_TO_UINT_32(N)                             \
+  inline uint32_t TruncateToUint##N(uint64_t x) {                  \
+    return static_cast<uint32_t>(TruncateToUintN(N, x));           \
+  }                                                                \
+  VIXL_DEPRECATED("TruncateToUint" #N,                             \
+                  inline uint32_t truncate_to_int##N(int64_t x)) { \
+    return TruncateToUint##N(x);                                   \
   }
 
 INT_1_TO_63_LIST(DECLARE_IS_INT_N)
 INT_1_TO_63_LIST(DECLARE_IS_UINT_N)
-INT_1_TO_63_LIST(DECLARE_TRUNCATE_TO_INT_N)
+INT_1_TO_32_LIST(DECLARE_TRUNCATE_TO_UINT_32)
 
 #undef DECLARE_IS_INT_N
 #undef DECLARE_IS_UINT_N
 #undef DECLARE_TRUNCATE_TO_INT_N
 
 // Bit field extraction.
-inline uint32_t ExtractUnsignedBitfield32(int msb, int lsb, uint32_t x) {
-  return (x >> lsb) & ((1 << (1 + msb - lsb)) - 1);
-}
-
 inline uint64_t ExtractUnsignedBitfield64(int msb, int lsb, uint64_t x) {
+  VIXL_ASSERT((static_cast<size_t>(msb) < sizeof(x) * 8) && (lsb >= 0) &&
+              (msb >= lsb));
+  if ((msb == 63) && (lsb == 0)) return x;
   return (x >> lsb) & ((static_cast<uint64_t>(1) << (1 + msb - lsb)) - 1);
 }
 
-inline int32_t ExtractSignedBitfield32(int msb, int lsb, int32_t x) {
-  return (x << (31 - msb)) >> (lsb + 31 - msb);
+
+inline uint32_t ExtractUnsignedBitfield32(int msb, int lsb, uint32_t x) {
+  VIXL_ASSERT((static_cast<size_t>(msb) < sizeof(x) * 8) && (lsb >= 0) &&
+              (msb >= lsb));
+  return TruncateToUint32(ExtractUnsignedBitfield64(msb, lsb, x));
 }
 
+
 inline int64_t ExtractSignedBitfield64(int msb, int lsb, int64_t x) {
-  return (x << (63 - msb)) >> (lsb + 63 - msb);
+  VIXL_ASSERT((static_cast<size_t>(msb) < sizeof(x) * 8) && (lsb >= 0) &&
+              (msb >= lsb));
+  uint64_t temp = ExtractUnsignedBitfield64(msb, lsb, x);
+  // If the highest extracted bit is set, sign extend.
+  if ((temp >> (msb - lsb)) == 1) {
+    temp |= ~UINT64_C(0) << (msb - lsb);
+  }
+  int64_t result;
+  memcpy(&result, &temp, sizeof(result));
+  return result;
 }
+
+
+inline int32_t ExtractSignedBitfield32(int msb, int lsb, int32_t x) {
+  VIXL_ASSERT((static_cast<size_t>(msb) < sizeof(x) * 8) && (lsb >= 0) &&
+              (msb >= lsb));
+  uint32_t temp = TruncateToUint32(ExtractSignedBitfield64(msb, lsb, x));
+  int32_t result;
+  memcpy(&result, &temp, sizeof(result));
+  return result;
+}
+
+
+inline uint64_t RotateRight(uint64_t value,
+                            unsigned int rotate,
+                            unsigned int width) {
+  VIXL_ASSERT((width > 0) && (width <= 64));
+  uint64_t width_mask = ~UINT64_C(0) >> (64 - width);
+  rotate &= 63;
+  if (rotate > 0) {
+    value &= width_mask;
+    value = (value << (width - rotate)) | (value >> rotate);
+  }
+  return value & width_mask;
+}
+
 
 // Floating point representation.
 uint32_t FloatToRawbits(float value);
@@ -354,14 +397,29 @@ T ReverseBytes(T value, int block_bytes_log2) {
   static const uint8_t permute_table[3][8] = {{6, 7, 4, 5, 2, 3, 0, 1},
                                               {4, 5, 6, 7, 0, 1, 2, 3},
                                               {0, 1, 2, 3, 4, 5, 6, 7}};
-  T result = 0;
+  uint64_t temp = 0;
   for (int i = 0; i < 8; i++) {
-    result <<= 8;
-    result |= bytes[permute_table[block_bytes_log2 - 1][i]];
+    temp <<= 8;
+    temp |= bytes[permute_table[block_bytes_log2 - 1][i]];
   }
+
+  T result;
+  VIXL_STATIC_ASSERT(sizeof(result) <= sizeof(temp));
+  memcpy(&result, &temp, sizeof(result));
   return result;
 }
 
+template <unsigned MULTIPLE, typename T>
+inline bool IsMultiple(T value) {
+  VIXL_ASSERT(IsPowerOf2(MULTIPLE));
+  return (value & (MULTIPLE - 1)) == 0;
+}
+
+template <typename T>
+inline bool IsMultiple(T value, unsigned multiple) {
+  VIXL_ASSERT(IsPowerOf2(multiple));
+  return (value & (multiple - 1)) == 0;
+}
 
 // Pointer alignment
 // TODO: rename/refactor to make it specific to instructions.
@@ -391,7 +449,11 @@ T AlignUp(T pointer, size_t alignment) {
   size_t align_step = (alignment - pointer_raw) % alignment;
   VIXL_ASSERT((pointer_raw + align_step) % alignment == 0);
 
-  return (T)(pointer_raw + align_step);
+  T result = (T)(pointer_raw + align_step);
+
+  VIXL_ASSERT(result >= pointer);
+
+  return result;
 }
 
 // Decrement a pointer (up to 64 bits) until it has the specified alignment.
@@ -420,7 +482,9 @@ inline Td ExtractBits(Ts value, int least_significant_bit, Td mask) {
 }
 
 template <typename Ts, typename Td>
-inline void AssignBit(Td& dst, int bit, Ts value) {  // NOLINT
+inline void AssignBit(Td& dst,  // NOLINT(runtime/references)
+                      int bit,
+                      Ts value) {
   VIXL_ASSERT((value == Ts(0)) || (value == Ts(1)));
   VIXL_ASSERT(bit >= 0);
   VIXL_ASSERT(bit < static_cast<int>(sizeof(Td) * 8));
@@ -430,7 +494,7 @@ inline void AssignBit(Td& dst, int bit, Ts value) {  // NOLINT
 }
 
 template <typename Td, typename Ts>
-inline void AssignBits(Td& dst,  // NOLINT
+inline void AssignBits(Td& dst,  // NOLINT(runtime/references)
                        int least_significant_bit,
                        Ts mask,
                        Ts value) {
@@ -671,10 +735,10 @@ class Uint64 {
   int64_t GetSigned() const { return data_; }
   Uint32 ToUint32() const {
     VIXL_ASSERT((data_ >> 32) == 0);
-    return Uint32(data_);
+    return Uint32(static_cast<uint32_t>(data_));
   }
   Uint32 GetHigh32() const { return Uint32(data_ >> 32); }
-  Uint32 GetLow32() const { return Uint32(data_); }
+  Uint32 GetLow32() const { return Uint32(data_ & 0xffffffff); }
   Uint64 operator~() const { return Uint64(~data_); }
   Uint64 operator-() const { return Uint64(-data_); }
   bool operator==(Uint64 value) const { return data_ == value.data_; }

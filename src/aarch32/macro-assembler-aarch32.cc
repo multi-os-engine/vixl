@@ -27,6 +27,12 @@
 
 #include "aarch32/macro-assembler-aarch32.h"
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
+#define CONTEXT_SCOPE \
+  ContextScope context(this, __FILE__ ":" TOSTRING(__LINE__))
+
 namespace vixl {
 namespace aarch32 {
 
@@ -61,7 +67,7 @@ bool UseScratchRegisterScope::IsAvailable(const Register& reg) const {
 bool UseScratchRegisterScope::IsAvailable(const VRegister& reg) const {
   VIXL_ASSERT(available_vfp_ != NULL);
   VIXL_ASSERT(reg.IsValid());
-  return available_vfp_->Includes(reg);
+  return available_vfp_->IncludesAllOf(reg);
 }
 
 
@@ -127,7 +133,7 @@ void UseScratchRegisterScope::Release(const Register& reg) {
 void UseScratchRegisterScope::Release(const VRegister& reg) {
   VIXL_ASSERT(available_vfp_ != NULL);
   VIXL_ASSERT(reg.IsValid());
-  VIXL_ASSERT(!available_vfp_->Includes(reg));
+  VIXL_ASSERT(!available_vfp_->IncludesAliasOf(reg));
   available_vfp_->Combine(reg);
 }
 
@@ -168,8 +174,24 @@ void UseScratchRegisterScope::ExcludeAll() {
 }
 
 
-void MacroAssembler::VeneerPoolManager::RemoveLabel(Label* label) {
-  label->ResetInVeneerPool();
+void VeneerPoolManager::AddLabel(Label* label) {
+  if (!label->IsInVeneerPool()) {
+    label->SetVeneerPoolManager(this);
+    labels_.push_back(label);
+  }
+  Label::ForwardReference& back = label->GetBackForwardRef();
+  back.SetIsBranch();
+  label->UpdateCheckpoint();
+  Label::Offset tmp = label->GetCheckpoint();
+  if (checkpoint_ > tmp) {
+    checkpoint_ = tmp;
+    masm_->ComputeCheckpoint();
+  }
+}
+
+
+void VeneerPoolManager::RemoveLabel(Label* label) {
+  label->ClearVeneerPoolManager();
   if (label->GetCheckpoint() == checkpoint_) {
     // We have to compute checkpoint again.
     checkpoint_ = Label::kMaxOffset;
@@ -196,7 +218,7 @@ void MacroAssembler::VeneerPoolManager::RemoveLabel(Label* label) {
 }
 
 
-void MacroAssembler::VeneerPoolManager::Emit(Label::Offset target) {
+void VeneerPoolManager::Emit(Label::Offset target) {
   checkpoint_ = Label::kMaxOffset;
   // Sort labels (regarding their checkpoint) to avoid that a veneer
   // becomes out of range.
@@ -259,40 +281,44 @@ void MacroAssembler::PerformEnsureEmit(Label::Offset target, uint32_t size) {
   EmitOption option = kBranchRequired;
   Label after_pools;
   if (target >= veneer_pool_manager_.GetCheckpoint()) {
+#ifdef VIXL_DEBUG
     // Here, we can't use an AssemblerAccurateScope as it would call
     // PerformEnsureEmit in an infinite loop.
-    VIXL_ASSERT(!AllowAssembler());
-#ifdef VIXL_DEBUG
+    bool save_assembler_state = AllowAssembler();
     SetAllowAssembler(true);
 #endif
     b(&after_pools);
-    VIXL_ASSERT(AllowAssembler());
 #ifdef VIXL_DEBUG
     SetAllowAssembler(false);
 #endif
     veneer_pool_manager_.Emit(target);
     option = kNoBranchRequired;
+#ifdef VIXL_DEBUG
+    SetAllowAssembler(save_assembler_state);
+#endif
   }
   // Check if the macro-assembler's internal literal pool should be emitted
   // to avoid any overflow. If we already generated the veneers, we can
   // emit the pool (the branch is already done).
-  VIXL_ASSERT(GetCursorOffset() <=
-              static_cast<uint32_t>(literal_pool_manager_.GetCheckpoint()));
+  VIXL_ASSERT(GetCursorOffset() <= literal_pool_manager_.GetCheckpoint());
   if ((target > literal_pool_manager_.GetCheckpoint()) ||
       (option == kNoBranchRequired)) {
     // We will generate the literal pool. Generate all the veneers which
     // would become out of range.
+    size_t literal_pool_size = literal_pool_manager_.GetLiteralPoolSize();
+    VIXL_ASSERT(IsInt32(literal_pool_size));
     Label::Offset veneers_target =
-        target + literal_pool_manager_.GetLiteralPoolSize();
+        target + static_cast<Label::Offset>(literal_pool_size);
+    VIXL_ASSERT(veneers_target >= 0);
     if (veneers_target >= veneer_pool_manager_.GetCheckpoint()) {
       veneer_pool_manager_.Emit(veneers_target);
     }
     EmitLiteralPool(option);
   }
-  bind(&after_pools);
-  if (GetBuffer().IsManaged()) {
+  BindHelper(&after_pools);
+  if (GetBuffer()->IsManaged()) {
     bool grow_requested;
-    GetBuffer().EnsureSpaceFor(size, &grow_requested);
+    GetBuffer()->EnsureSpaceFor(size, &grow_requested);
     if (grow_requested) ComputeCheckpoint();
   }
 }
@@ -301,11 +327,16 @@ void MacroAssembler::PerformEnsureEmit(Label::Offset target, uint32_t size) {
 void MacroAssembler::ComputeCheckpoint() {
   checkpoint_ = veneer_pool_manager_.GetCheckpoint();
   if (literal_pool_manager_.GetCheckpoint() != Label::kMaxOffset) {
+    size_t veneer_max_size = veneer_pool_manager_.GetMaxSize();
+    VIXL_ASSERT(IsInt32(veneer_max_size));
     Label::Offset tmp = literal_pool_manager_.GetCheckpoint() -
-                        veneer_pool_manager_.GetMaxSize();
+                        static_cast<Label::Offset>(veneer_max_size);
+    VIXL_ASSERT(tmp >= 0);
     checkpoint_ = std::min(checkpoint_, tmp);
   }
-  Label::Offset buffer_checkpoint = GetBuffer().GetCapacity();
+  size_t buffer_size = GetBuffer()->GetCapacity();
+  VIXL_ASSERT(IsInt32(buffer_size));
+  Label::Offset buffer_checkpoint = static_cast<Label::Offset>(buffer_size);
   checkpoint_ = std::min(checkpoint_, buffer_checkpoint);
 }
 
@@ -350,16 +381,16 @@ void MacroAssembler::Switch(Register reg, JumpTableBase* table) {
     Add(scratch, scratch, Operand(reg, LSL, table->GetOffsetShift()));
     switch (table->GetOffsetShift()) {
       case 0:
-        Ldrb(scratch, scratch);
+        Ldrb(scratch, MemOperand(scratch));
         break;
       case 1:
-        Ldrh(scratch, scratch);
+        Ldrh(scratch, MemOperand(scratch));
         break;
       case 2:
-        Ldr(scratch, scratch);
+        Ldr(scratch, MemOperand(scratch));
         break;
       default:
-        VIXL_ABORT_WITH_MSG("Unsupported jump table size");
+        VIXL_ABORT_WITH_MSG("Unsupported jump table size.\n");
     }
     // Emit whatever needs to be emitted if we want to
     // correctly rescord the position of the branch instruction
@@ -378,7 +409,7 @@ void MacroAssembler::Switch(Register reg, JumpTableBase* table) {
     if (table->GetOffsetShift() == 2) {
       // 32bit offsets
       Add(scratch, scratch, Operand(reg, LSL, 2));
-      Ldr(scratch, scratch);
+      Ldr(scratch, MemOperand(scratch));
       // Cannot use add pc, pc, r lsl 1 as this is unpredictable in T32,
       // so let's do the shift before
       Lsl(scratch, scratch, 1);
@@ -425,7 +456,7 @@ void MacroAssembler::Switch(Register reg, JumpTableBase* table) {
 void MacroAssembler::GenerateSwitchTable(JumpTableBase* table, int table_size) {
   table->BindTable(GetCursorOffset());
   for (int i = 0; i < table_size / 4; i++) {
-    GetBuffer().Emit32(0);
+    GetBuffer()->Emit32(0);
   }
 }
 
@@ -456,26 +487,45 @@ void MacroAssembler::HandleOutOfBoundsImmediate(Condition cond,
                                                 Register tmp,
                                                 uint32_t imm) {
   if (IsUintN(16, imm)) {
-    EnsureEmitFor(kMaxInstructionSizeInBytes);
+    CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
     mov(cond, tmp, imm & 0xffff);
     return;
   }
   if (IsUsingT32()) {
     if (ImmediateT32::IsImmediateT32(~imm)) {
-      EnsureEmitFor(kMaxInstructionSizeInBytes);
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
       mvn(cond, tmp, ~imm);
       return;
     }
   } else {
     if (ImmediateA32::IsImmediateA32(~imm)) {
-      EnsureEmitFor(kMaxInstructionSizeInBytes);
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
       mvn(cond, tmp, ~imm);
       return;
     }
   }
-  EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
+  CodeBufferCheckScope scope(this, 2 * kMaxInstructionSizeInBytes);
   mov(cond, tmp, imm & 0xffff);
   movt(cond, tmp, imm >> 16);
+}
+
+
+void MacroAssembler::PadToMinimumBranchRange(Label* label) {
+  const Label::ForwardReference* last_reference = label->GetForwardRefBack();
+  if ((last_reference != NULL) && last_reference->IsUsingT32()) {
+    uint32_t location = last_reference->GetLocation();
+    if (location + k16BitT32InstructionSizeInBytes ==
+        static_cast<uint32_t>(GetCursorOffset())) {
+      uint16_t* instr_ptr = buffer_.GetOffsetAddress<uint16_t*>(location);
+      if ((instr_ptr[0] & kCbzCbnzMask) == kCbzCbnzValue) {
+        VIXL_ASSERT(!InITBlock());
+        // A Cbz or a Cbnz can't jump immediately after the instruction. If the
+        // target is immediately after the Cbz or Cbnz, we insert a nop to
+        // avoid that.
+        EmitT32_16(k16BitT32NopOpcode);
+      }
+    }
+  }
 }
 
 
@@ -586,7 +636,9 @@ void MacroAssembler::Printf(const char* format,
     PushRegister(reg2);
     PushRegister(reg1);
     Push(RegisterList(r0, r1));
-    Ldr(r0, format);
+    StringLiteral* format_literal =
+        new StringLiteral(format, RawLiteral::kDeletedOnPlacementByPool);
+    Adr(r0, format_literal);
     uint32_t args = (reg4.GetType() << 12) | (reg3.GetType() << 8) |
                     (reg2.GetType() << 4) | reg1.GetType();
     Mov(r1, args);
@@ -709,8 +761,10 @@ void MacroAssembler::Printf(const char* format,
         address = reinterpret_cast<uintptr_t>(PrintfTrampolineRRRR);
         break;
     }
-    Ldr(r0, format);
-    Mov(ip, address);
+    StringLiteral* format_literal =
+        new StringLiteral(format, RawLiteral::kDeletedOnPlacementByPool);
+    Adr(r0, format_literal);
+    Mov(ip, Operand::From(address));
     Blx(ip);
     // If register reg4 was left on the stack => skip it.
     if (core_count == 5) Drop(kRegSizeInBytes);
@@ -786,57 +840,23 @@ void MacroAssembler::Delegate(InstructionType type,
                               Condition cond,
                               Register rn,
                               const Operand& operand) {
-  // add, movt, movw, sub, sxtbl16, teq, uxtb16
-  ContextScope context(this);
-  if (IsUsingT32() && operand.IsRegisterShiftedRegister()) {
-    InstructionCondRROp shiftop = NULL;
-    switch (operand.GetShift().GetType()) {
-      case LSL:
-        shiftop = &Assembler::lsl;
-        break;
-      case LSR:
-        shiftop = &Assembler::lsr;
-        break;
-      case ASR:
-        shiftop = &Assembler::asr;
-        break;
-      case RRX:
-        break;
-      case ROR:
-        shiftop = &Assembler::ror;
-        break;
-      default:
-        VIXL_UNREACHABLE();
-    }
-    if (shiftop != NULL) {
-      UseScratchRegisterScope temps(this);
-      Register scratch = temps.Acquire();
-      EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-      (this->*shiftop)(cond,
-                       scratch,
-                       operand.GetBaseRegister(),
-                       operand.GetShiftRegister());
-      return (this->*instruction)(cond, rn, scratch);
-    }
+  // movt, sxtb16, teq, uxtb16
+  VIXL_ASSERT((type == kMovt) || (type == kSxtb16) || (type == kTeq) ||
+              (type == kUxtb16));
+
+  if (type == kMovt) {
+    VIXL_ABORT_WITH_MSG("`Movt` expects a 16-bit immediate.");
   }
-  if (operand.IsImmediate()) {
-    switch (type) {
-      case kTeq: {
-        UseScratchRegisterScope temps(this);
-        Register scratch = temps.Acquire();
-        HandleOutOfBoundsImmediate(cond, scratch, operand.GetImmediate());
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        teq(cond, rn, scratch);
-        return;
-      }
-      case kMovt:
-      case kMovw:
-      case kSxtb16:
-      case kUxtb16:
-        break;
-      default:
-        VIXL_UNREACHABLE();
-    }
+
+  // This delegate only supports teq with immediates.
+  CONTEXT_SCOPE;
+  if ((type == kTeq) && operand.IsImmediate()) {
+    UseScratchRegisterScope temps(this);
+    Register scratch = temps.Acquire();
+    HandleOutOfBoundsImmediate(cond, scratch, operand.GetImmediate());
+    CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+    teq(cond, rn, scratch);
+    return;
   }
   Assembler::Delegate(type, instruction, cond, rn, operand);
 }
@@ -849,7 +869,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rn,
                               const Operand& operand) {
   // cmn cmp mov movs mvn mvns sxtb sxth tst uxtb uxth
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   VIXL_ASSERT(size.IsBest());
   if (IsUsingT32() && operand.IsRegisterShiftedRegister()) {
     InstructionCondRROp shiftop = NULL;
@@ -874,7 +894,7 @@ void MacroAssembler::Delegate(InstructionType type,
     if (shiftop != NULL) {
       UseScratchRegisterScope temps(this);
       Register scratch = temps.Acquire();
-      EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
+      CodeBufferCheckScope scope(this, 2 * kMaxInstructionSizeInBytes);
       (this->*shiftop)(cond,
                        scratch,
                        operand.GetBaseRegister(),
@@ -891,51 +911,50 @@ void MacroAssembler::Delegate(InstructionType type,
           // Immediate is too large, but not using PC, so handle with mov{t}.
           HandleOutOfBoundsImmediate(cond, rn, imm);
           if (type == kMovs) {
-            EnsureEmitFor(kMaxInstructionSizeInBytes);
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
             tst(cond, rn, rn);
           }
           return;
-        } else {
+        } else if (type == kMov) {
+          VIXL_ASSERT(IsUsingA32() || cond.Is(al));
           // Immediate is too large and using PC, so handle using a temporary
           // register.
           UseScratchRegisterScope temps(this);
           Register scratch = temps.Acquire();
-          HandleOutOfBoundsImmediate(cond, scratch, imm);
+          HandleOutOfBoundsImmediate(al, scratch, imm);
           EnsureEmitFor(kMaxInstructionSizeInBytes);
-          // TODO: A bit of nonsense here! But should we fix 'mov pc, imm'
-          // anyway?
-          if (type == kMovs) {
-            return movs(cond, pc, scratch);
-          }
-          return mov(cond, pc, scratch);
+          return bx(cond, scratch);
         }
+        break;
       case kCmn:
       case kCmp:
-        if (!rn.IsPC()) {
+        if (IsUsingA32() || !rn.IsPC()) {
           UseScratchRegisterScope temps(this);
           Register scratch = temps.Acquire();
           HandleOutOfBoundsImmediate(cond, scratch, imm);
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
           return (this->*instruction)(cond, size, rn, scratch);
         }
         break;
       case kMvn:
       case kMvns:
+        if (!rn.IsPC()) {
+          UseScratchRegisterScope temps(this);
+          Register scratch = temps.Acquire();
+          HandleOutOfBoundsImmediate(cond, scratch, imm);
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          return (this->*instruction)(cond, size, rn, scratch);
+        }
+        break;
+      case kTst:
         if (IsUsingA32() || !rn.IsPC()) {
           UseScratchRegisterScope temps(this);
           Register scratch = temps.Acquire();
           HandleOutOfBoundsImmediate(cond, scratch, imm);
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
           return (this->*instruction)(cond, size, rn, scratch);
         }
         break;
-      case kTst: {
-        UseScratchRegisterScope temps(this);
-        Register scratch = temps.Acquire();
-        HandleOutOfBoundsImmediate(cond, scratch, imm);
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        return (this->*instruction)(cond, size, rn, scratch);
-      }
       default:  // kSxtb, Sxth, Uxtb, Uxth
         break;
     }
@@ -950,9 +969,23 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rd,
                               Register rn,
                               const Operand& operand) {
-  // addw orn orns pkhbt pkhtb rsc rscs subw sxtab sxtab16 sxtah uxtab uxtab16
-  // uxtah
-  ContextScope context(this);
+  // orn orns pkhbt pkhtb rsc rscs sxtab sxtab16 sxtah uxtab uxtab16 uxtah
+
+  if ((type == kSxtab) || (type == kSxtab16) || (type == kSxtah) ||
+      (type == kUxtab) || (type == kUxtab16) || (type == kUxtah) ||
+      (type == kPkhbt) || (type == kPkhtb)) {
+    // TODO: It would be good to be able to convert "type" to a string, so we
+    // can tell the user which instruction is not valid.
+    VIXL_ABORT_WITH_MSG(
+        "The MacroAssembler does not convert "
+        "Sxtab, Sxtab16, Sxtah, Uxtab, Uxtab16, Uxtah, Pkhbt and Pkhtb "
+        "instructions.");
+  }
+
+  // This delegate only handles the following instructions.
+  VIXL_ASSERT((type == kOrn) || (type == kOrns) || (type == kRsc) ||
+              (type == kRscs));
+  CONTEXT_SCOPE;
   if (IsUsingT32() && operand.IsRegisterShiftedRegister()) {
     InstructionCondRROp shiftop = NULL;
     switch (operand.GetShift().GetType()) {
@@ -966,6 +999,8 @@ void MacroAssembler::Delegate(InstructionType type,
         shiftop = &Assembler::asr;
         break;
       case RRX:
+        // A RegisterShiftedRegister operand cannot have a shift of type RRX.
+        VIXL_UNREACHABLE();
         break;
       case ROR:
         shiftop = &Assembler::ror;
@@ -983,7 +1018,9 @@ void MacroAssembler::Delegate(InstructionType type,
       if (!rm.Is(rn)) temps.Include(rm);
       if (!rs.Is(rn)) temps.Include(rs);
       Register scratch = temps.Acquire();
-      EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
+      // TODO: The scope length was measured empirically. We should analyse the
+      // worst-case size and add targetted tests.
+      CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
       (this->*shiftop)(cond, scratch, rm, rs);
       return (this->*instruction)(cond, rd, rn, scratch);
     }
@@ -1001,11 +1038,17 @@ void MacroAssembler::Delegate(InstructionType type,
       if (!rd.Is(rn)) temps.Include(rd);
       negated_rn = temps.Acquire();
     }
-    EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-    mvn(cond, negated_rn, rn);
+    {
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+      mvn(cond, negated_rn, rn);
+    }
     if (type == kRsc) {
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
       return adc(cond, rd, negated_rn, operand);
     }
+    // TODO: We shouldn't have to specify how much space the next instruction
+    // needs.
+    CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
     return adcs(cond, rd, negated_rn, operand);
   }
   if (IsUsingA32() && ((type == kOrn) || (type == kOrns))) {
@@ -1025,45 +1068,40 @@ void MacroAssembler::Delegate(InstructionType type,
       temps.Include(operand.GetShiftRegister());
     }
     scratch = temps.Acquire();
-    EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-    mvn(cond, scratch, operand);
+    {
+      // TODO: We shouldn't have to specify how much space the next instruction
+      // needs.
+      CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
+      mvn(cond, scratch, operand);
+    }
     if (type == kOrns) {
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
       return orrs(cond, rd, rn, scratch);
     }
+    CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
     return orr(cond, rd, rn, scratch);
   }
   if (operand.IsImmediate()) {
-    int32_t imm = operand.GetImmediate();
-    if (imm < 0) {
-      switch (type) {
-        case kAddw:
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          return subw(cond, rd, rn, -imm);
-        case kSubw:
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          return addw(cond, rd, rn, -imm);
-        default:
-          break;
+    int32_t imm = operand.GetSignedImmediate();
+    if (ImmediateT32::IsImmediateT32(~imm)) {
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+      if (IsUsingT32()) {
+        switch (type) {
+          case kOrn:
+            return orr(cond, rd, rn, ~imm);
+          case kOrns:
+            return orrs(cond, rd, rn, ~imm);
+          default:
+            break;
+        }
       }
     }
     UseScratchRegisterScope temps(this);
     // Allow using the destination as a scratch register if possible.
     if (!rd.Is(rn)) temps.Include(rd);
     Register scratch = temps.Acquire();
-    switch (type) {
-      case kAddw:
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-        mov(cond, scratch, imm);
-        return add(cond, rd, rn, scratch);
-      case kSubw:
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-        mov(cond, scratch, imm);
-        return sub(cond, rd, rn, scratch);
-      default:
-        break;
-    }
-    EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-    mov(cond, scratch, imm);
+    HandleOutOfBoundsImmediate(cond, scratch, imm);
+    CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
     return (this->*instruction)(cond, rd, rn, scratch);
   }
   Assembler::Delegate(type, instruction, cond, rd, rn, operand);
@@ -1079,7 +1117,17 @@ void MacroAssembler::Delegate(InstructionType type,
                               const Operand& operand) {
   // adc adcs add adds and_ ands asr asrs bic bics eor eors lsl lsls lsr lsrs
   // orr orrs ror rors rsb rsbs sbc sbcs sub subs
-  ContextScope context(this);
+
+  VIXL_ASSERT(
+      (type == kAdc) || (type == kAdcs) || (type == kAdd) || (type == kAdds) ||
+      (type == kAnd) || (type == kAnds) || (type == kAsr) || (type == kAsrs) ||
+      (type == kBic) || (type == kBics) || (type == kEor) || (type == kEors) ||
+      (type == kLsl) || (type == kLsls) || (type == kLsr) || (type == kLsrs) ||
+      (type == kOrr) || (type == kOrrs) || (type == kRor) || (type == kRors) ||
+      (type == kRsb) || (type == kRsbs) || (type == kSbc) || (type == kSbcs) ||
+      (type == kSub) || (type == kSubs));
+
+  CONTEXT_SCOPE;
   VIXL_ASSERT(size.IsBest());
   if (IsUsingT32() && operand.IsRegisterShiftedRegister()) {
     InstructionCondRROp shiftop = NULL;
@@ -1094,6 +1142,8 @@ void MacroAssembler::Delegate(InstructionType type,
         shiftop = &Assembler::asr;
         break;
       case RRX:
+        // A RegisterShiftedRegister operand cannot have a shift of type RRX.
+        VIXL_UNREACHABLE();
         break;
       case ROR:
         shiftop = &Assembler::ror;
@@ -1111,23 +1161,35 @@ void MacroAssembler::Delegate(InstructionType type,
       if (!rm.Is(rn)) temps.Include(rm);
       if (!rs.Is(rn)) temps.Include(rs);
       Register scratch = temps.Acquire();
-      EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
+      CodeBufferCheckScope scope(this, 2 * kMaxInstructionSizeInBytes);
       (this->*shiftop)(cond, scratch, rm, rs);
       return (this->*instruction)(cond, size, rd, rn, scratch);
     }
   }
   if (operand.IsImmediate()) {
-    int32_t imm = operand.GetImmediate();
+    int32_t imm = operand.GetSignedImmediate();
+    if (ImmediateT32::IsImmediateT32(~imm)) {
+      if (IsUsingT32()) {
+        switch (type) {
+          case kOrr:
+            return orn(cond, rd, rn, ~imm);
+          case kOrrs:
+            return orns(cond, rd, rn, ~imm);
+          default:
+            break;
+        }
+      }
+    }
     if (imm < 0) {
       InstructionCondSizeRROp asmcb = NULL;
+      // Add and sub are equivalent using an arithmetic negation:
+      //   add rd, rn, #imm <-> sub rd, rn, - #imm
+      // Add and sub with carry are equivalent using a bitwise NOT:
+      //   adc rd, rn, #imm <-> sbc rd, rn, NOT #imm
       switch (type) {
         case kAdd:
           asmcb = &Assembler::sub;
           imm = -imm;
-          break;
-        case kAdc:
-          asmcb = &Assembler::sbc;
-          imm = ~imm;
           break;
         case kAdds:
           asmcb = &Assembler::subs;
@@ -1137,19 +1199,31 @@ void MacroAssembler::Delegate(InstructionType type,
           asmcb = &Assembler::add;
           imm = -imm;
           break;
+        case kSubs:
+          asmcb = &Assembler::adds;
+          imm = -imm;
+          break;
+        case kAdc:
+          asmcb = &Assembler::sbc;
+          imm = ~imm;
+          break;
+        case kAdcs:
+          asmcb = &Assembler::sbcs;
+          imm = ~imm;
+          break;
         case kSbc:
           asmcb = &Assembler::adc;
           imm = ~imm;
           break;
-        case kSubs:
-          asmcb = &Assembler::adds;
-          imm = -imm;
+        case kSbcs:
+          asmcb = &Assembler::adcs;
+          imm = ~imm;
           break;
         default:
           break;
       }
       if (asmcb != NULL) {
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
         return (this->*asmcb)(cond, size, rd, rn, Operand(imm));
       }
     }
@@ -1157,7 +1231,9 @@ void MacroAssembler::Delegate(InstructionType type,
     // Allow using the destination as a scratch register if possible.
     if (!rd.Is(rn)) temps.Include(rd);
     Register scratch = temps.Acquire();
-    EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
+    // TODO: The scope length was measured empirically. We should analyse the
+    // worst-case size and add targetted tests.
+    CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
     mov(cond, scratch, operand.GetImmediate());
     return (this->*instruction)(cond, size, rd, rn, scratch);
   }
@@ -1170,12 +1246,20 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rn,
                               Label* label) {
   // cbz cbnz
-  ContextScope context(this);
-  if (IsUsingT32() && rn.IsLow()) {
+  VIXL_ASSERT((type == kCbz) || (type == kCbnz));
+
+  CONTEXT_SCOPE;
+  CodeBufferCheckScope scope(this, 2 * kMaxInstructionSizeInBytes);
+  if (IsUsingA32()) {
+    if (type == kCbz) {
+      VIXL_ABORT_WITH_MSG("Cbz is only available for T32.\n");
+    } else {
+      VIXL_ABORT_WITH_MSG("Cbnz is only available for T32.\n");
+    }
+  } else if (rn.IsLow()) {
     switch (type) {
       case kCbnz: {
         Label done;
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
         cbz(rn, &done);
         b(label);
         Bind(&done);
@@ -1183,31 +1267,11 @@ void MacroAssembler::Delegate(InstructionType type,
       }
       case kCbz: {
         Label done;
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
         cbnz(rn, &done);
         b(label);
         Bind(&done);
         return;
       }
-      default:
-        break;
-    }
-  } else {
-    switch (type) {
-      case kCbnz:
-        // cmp rn, #0
-        // b.ne label
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-        cmp(rn, 0);
-        b(ne, label);
-        return;
-      case kCbz:
-        // cmp rn, #0
-        // b.eq label
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
-        cmp(rn, 0);
-        b(eq, label);
-        return;
       default:
         break;
     }
@@ -1286,7 +1350,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               DataType dt,
                               SRegister rd,
                               const SOperand& operand) {
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (type == kVmov) {
     if (operand.IsImmediate() && dt.Is(F32)) {
       const NeonImmediate& neon_imm = operand.GetNeonImmediate();
@@ -1297,7 +1361,10 @@ void MacroAssembler::Delegate(InstructionType type,
         UseScratchRegisterScope temps(this);
         Register scratch = temps.Acquire();
         float f = neon_imm.GetImmediate<float>();
-        EnsureEmitFor(2 * kMaxInstructionSizeInBytes);
+        // TODO: The scope length was measured empirically. We should analyse
+        // the
+        // worst-case size and add targetted tests.
+        CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
         mov(cond, scratch, FloatToRawbits(f));
         return vmov(cond, rd, scratch);
       }
@@ -1313,7 +1380,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               DataType dt,
                               DRegister rd,
                               const DOperand& operand) {
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (type == kVmov) {
     if (operand.IsImmediate()) {
       const NeonImmediate& neon_imm = operand.GetNeonImmediate();
@@ -1323,19 +1390,19 @@ void MacroAssembler::Delegate(InstructionType type,
             uint32_t imm = neon_imm.GetImmediate<uint32_t>();
             // vmov.i32 d0, 0xabababab will translate into vmov.i8 d0, 0xab
             if (IsI8BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I8, rd, imm & 0xff);
             }
             // vmov.i32 d0, 0xff0000ff will translate into
             // vmov.i64 d0, 0xff0000ffff0000ff
             if (IsI64BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I64, rd, replicate<uint64_t>(imm));
             }
             // vmov.i32 d0, 0xffab0000 will translate into
             // vmvn.i32 d0, 0x0054ffff
             if (cond.Is(al) && CanBeInverted(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmvn(I32, rd, ~imm);
             }
           }
@@ -1345,7 +1412,7 @@ void MacroAssembler::Delegate(InstructionType type,
             uint16_t imm = neon_imm.GetImmediate<uint16_t>();
             // vmov.i16 d0, 0xabab will translate into vmov.i8 d0, 0xab
             if (IsI8BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I8, rd, imm & 0xff);
             }
           }
@@ -1355,7 +1422,7 @@ void MacroAssembler::Delegate(InstructionType type,
             uint64_t imm = neon_imm.GetImmediate<uint64_t>();
             // vmov.i64 d0, -1 will translate into vmov.i8 d0, 0xff
             if (IsI8BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I8, rd, imm & 0xff);
             }
             // mov ip, lo(imm64)
@@ -1365,9 +1432,15 @@ void MacroAssembler::Delegate(InstructionType type,
             {
               UseScratchRegisterScope temps(this);
               Register scratch = temps.Acquire();
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
-              mov(cond, scratch, static_cast<uint32_t>(imm & 0xffffffff));
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              {
+                // TODO: The scope length was measured empirically. We should
+                // analyse the
+                // worst-case size and add targetted tests.
+                CodeBufferCheckScope scope(this,
+                                           2 * kMaxInstructionSizeInBytes);
+                mov(cond, scratch, static_cast<uint32_t>(imm & 0xffffffff));
+              }
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               vdup(cond, Untyped32, rd, scratch);
             }
             // mov ip, hi(imm64)
@@ -1375,9 +1448,15 @@ void MacroAssembler::Delegate(InstructionType type,
             {
               UseScratchRegisterScope temps(this);
               Register scratch = temps.Acquire();
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
-              mov(cond, scratch, static_cast<uint32_t>(imm >> 32));
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              {
+                // TODO: The scope length was measured empirically. We should
+                // analyse the
+                // worst-case size and add targetted tests.
+                CodeBufferCheckScope scope(this,
+                                           2 * kMaxInstructionSizeInBytes);
+                mov(cond, scratch, static_cast<uint32_t>(imm >> 32));
+              }
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               vmov(cond, Untyped32, DRegisterLane(rd, 1), scratch);
             }
             return;
@@ -1392,8 +1471,10 @@ void MacroAssembler::Delegate(InstructionType type,
         // vdup.8 d0, ip
         UseScratchRegisterScope temps(this);
         Register scratch = temps.Acquire();
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        mov(cond, scratch, neon_imm.GetImmediate<uint32_t>());
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          mov(cond, scratch, neon_imm.GetImmediate<uint32_t>());
+        }
         DataTypeValue vdup_dt = Untyped32;
         switch (dt.GetValue()) {
           case I8:
@@ -1408,19 +1489,24 @@ void MacroAssembler::Delegate(InstructionType type,
           default:
             VIXL_UNREACHABLE();
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
         return vdup(cond, vdup_dt, rd, scratch);
       }
       if (dt.Is(F32) && neon_imm.CanConvert<float>()) {
         float f = neon_imm.GetImmediate<float>();
         // Punt to vmov.i32
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        // TODO: The scope length was guessed based on the double case below. We
+        // should analyse the worst-case size and add targetted tests.
+        CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
         return vmov(cond, I32, rd, FloatToRawbits(f));
       }
       if (dt.Is(F64) && neon_imm.CanConvert<double>()) {
         // Punt to vmov.i64
         double d = neon_imm.GetImmediate<double>();
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        // TODO: The scope length was measured empirically. We should analyse
+        // the
+        // worst-case size and add targetted tests.
+        CodeBufferCheckScope scope(this, 6 * kMaxInstructionSizeInBytes);
         return vmov(cond, I64, rd, DoubleToRawbits(d));
       }
     }
@@ -1435,7 +1521,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               DataType dt,
                               QRegister rd,
                               const QOperand& operand) {
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (type == kVmov) {
     if (operand.IsImmediate()) {
       const NeonImmediate& neon_imm = operand.GetNeonImmediate();
@@ -1445,19 +1531,19 @@ void MacroAssembler::Delegate(InstructionType type,
             uint32_t imm = neon_imm.GetImmediate<uint32_t>();
             // vmov.i32 d0, 0xabababab will translate into vmov.i8 d0, 0xab
             if (IsI8BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I8, rd, imm & 0xff);
             }
             // vmov.i32 d0, 0xff0000ff will translate into
             // vmov.i64 d0, 0xff0000ffff0000ff
             if (IsI64BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I64, rd, replicate<uint64_t>(imm));
             }
             // vmov.i32 d0, 0xffab0000 will translate into
             // vmvn.i32 d0, 0x0054ffff
             if (CanBeInverted(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmvn(cond, I32, rd, ~imm);
             }
           }
@@ -1467,7 +1553,7 @@ void MacroAssembler::Delegate(InstructionType type,
             uint16_t imm = neon_imm.GetImmediate<uint16_t>();
             // vmov.i16 d0, 0xabab will translate into vmov.i8 d0, 0xab
             if (IsI8BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I8, rd, imm & 0xff);
             }
           }
@@ -1477,7 +1563,7 @@ void MacroAssembler::Delegate(InstructionType type,
             uint64_t imm = neon_imm.GetImmediate<uint64_t>();
             // vmov.i64 d0, -1 will translate into vmov.i8 d0, 0xff
             if (IsI8BitPattern(imm)) {
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               return vmov(cond, I8, rd, imm & 0xff);
             }
             // mov ip, lo(imm64)
@@ -1487,9 +1573,11 @@ void MacroAssembler::Delegate(InstructionType type,
             {
               UseScratchRegisterScope temps(this);
               Register scratch = temps.Acquire();
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
-              mov(cond, scratch, static_cast<uint32_t>(imm & 0xffffffff));
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              {
+                CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+                mov(cond, scratch, static_cast<uint32_t>(imm & 0xffffffff));
+              }
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               vdup(cond, Untyped32, rd, scratch);
             }
             // mov ip, hi(imm64)
@@ -1498,14 +1586,18 @@ void MacroAssembler::Delegate(InstructionType type,
             {
               UseScratchRegisterScope temps(this);
               Register scratch = temps.Acquire();
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
-              mov(cond, scratch, static_cast<uint32_t>(imm >> 32));
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
-              vmov(cond,
-                   Untyped32,
-                   DRegisterLane(rd.GetLowDRegister(), 1),
-                   scratch);
-              EnsureEmitFor(kMaxInstructionSizeInBytes);
+              {
+                CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+                mov(cond, scratch, static_cast<uint32_t>(imm >> 32));
+              }
+              {
+                CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+                vmov(cond,
+                     Untyped32,
+                     DRegisterLane(rd.GetLowDRegister(), 1),
+                     scratch);
+              }
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
               vmov(cond, F64, rd.GetHighDRegister(), rd.GetLowDRegister());
             }
             return;
@@ -1520,8 +1612,10 @@ void MacroAssembler::Delegate(InstructionType type,
         // vdup.8 d0, ip
         UseScratchRegisterScope temps(this);
         Register scratch = temps.Acquire();
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        mov(cond, scratch, neon_imm.GetImmediate<uint32_t>());
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          mov(cond, scratch, neon_imm.GetImmediate<uint32_t>());
+        }
         DataTypeValue vdup_dt = Untyped32;
         switch (dt.GetValue()) {
           case I8:
@@ -1536,19 +1630,19 @@ void MacroAssembler::Delegate(InstructionType type,
           default:
             VIXL_UNREACHABLE();
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
         return vdup(cond, vdup_dt, rd, scratch);
       }
       if (dt.Is(F32) && neon_imm.CanConvert<float>()) {
         // Punt to vmov.i64
         float f = neon_imm.GetImmediate<float>();
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
         return vmov(cond, I32, rd, FloatToRawbits(f));
       }
       if (dt.Is(F64) && neon_imm.CanConvert<double>()) {
         // Punt to vmov.i64
         double d = neon_imm.GetImmediate<double>();
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
+        CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
         return vmov(cond, I64, rd, DoubleToRawbits(d));
       }
     }
@@ -1562,7 +1656,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               Condition cond,
                               const MemOperand& operand) {
   // pld pldw pli
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
@@ -1573,14 +1667,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // pld [r1, 12345]! will translate into
         //   add r1, r1, 12345
         //   pld [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, offset);
+          } else {
+            sub(cond, rn, rn, offset);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -1589,14 +1687,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // pld [r1, 12345] will translate into
         //   add ip, r1, 12345
         //   pld [ip]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, scratch, rn, offset);
-        } else {
-          sub(cond, scratch, rn, offset);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, scratch, rn, offset);
+          } else {
+            sub(cond, scratch, rn, offset);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -1606,13 +1708,17 @@ void MacroAssembler::Delegate(InstructionType type,
         //   movw ip. imm32 & 0xffffffff
         //   movt ip, imm32 >> 16
         //   add r1, r1, ip
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, MemOperand(rn, Offset));
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, MemOperand(rn, Offset));
+        }
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, offset);
+          } else {
+            sub(cond, rn, rn, offset);
+          }
         }
         return;
     }
@@ -1627,14 +1733,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // pld [r1, r2]! will translate into
         //   add r1, r1, r2
         //   pld [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, rm);
-        } else {
-          sub(cond, rn, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, rm);
+          } else {
+            sub(cond, rn, rn, rm);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -1643,14 +1753,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // pld [r1, r2] will translate into
         //   add ip, r1, r2
         //   pld [ip]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, scratch, rn, rm);
-        } else {
-          sub(cond, scratch, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, scratch, rn, rm);
+          } else {
+            sub(cond, scratch, rn, rm);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -1658,12 +1772,14 @@ void MacroAssembler::Delegate(InstructionType type,
         // pld [r1], r2 will translate into
         //   pld [r1]
         //   add r1, r1, r2
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, MemOperand(rn, Offset));
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, rm);
-        } else {
-          sub(cond, rn, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, MemOperand(rn, Offset));
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, rm);
+          } else {
+            sub(cond, rn, rn, rm);
+          }
         }
         return;
     }
@@ -1678,7 +1794,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               const MemOperand& operand) {
   // lda ldab ldaex ldaexb ldaexh ldah ldrbt ldrex ldrexb ldrexh ldrht ldrsbt
   // ldrsht ldrt stl stlb stlh strbt strht strt
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
@@ -1689,14 +1805,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // lda r0, [r1, 12345]! will translate into
         //   add r1, r1, 12345
         //   lda r0, [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, offset);
+          } else {
+            sub(cond, rn, rn, offset);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, rd, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, rd, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -1710,14 +1830,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // lda r0, [r1, 12345] will translate into
         //   add r0, r1, 12345
         //   lda r0, [r0]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, scratch, rn, offset);
-        } else {
-          sub(cond, scratch, rn, offset);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, scratch, rn, offset);
+          } else {
+            sub(cond, scratch, rn, offset);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, rd, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, rd, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -1729,13 +1853,17 @@ void MacroAssembler::Delegate(InstructionType type,
           //   movw ip. imm32 & 0xffffffff
           //   movt ip, imm32 >> 16
           //   add r1, r1, ip
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rd, MemOperand(rn, Offset));
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, offset);
-          } else {
-            sub(cond, rn, rn, offset);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rd, MemOperand(rn, Offset));
+          }
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, offset);
+            } else {
+              sub(cond, rn, rn, offset);
+            }
           }
           return;
         }
@@ -1752,14 +1880,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // lda r0, [r1, r2]! will translate into
         //   add r1, r1, 12345
         //   lda r0, [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, rm);
-        } else {
-          sub(cond, rn, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, rm);
+          } else {
+            sub(cond, rn, rn, rm);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, rd, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, rd, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -1773,14 +1905,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // lda r0, [r1, r2] will translate into
         //   add r0, r1, r2
         //   lda r0, [r0]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, scratch, rn, rm);
-        } else {
-          sub(cond, scratch, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, scratch, rn, rm);
+          } else {
+            sub(cond, scratch, rn, rm);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, rd, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, rd, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -1790,13 +1926,17 @@ void MacroAssembler::Delegate(InstructionType type,
           // lda r0, [r1], r2 translate into
           //   lda r0, [r1]
           //   add r1, r1, r2
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rd, MemOperand(rn, Offset));
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, rm);
-          } else {
-            sub(cond, rn, rn, rm);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rd, MemOperand(rn, Offset));
+          }
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, rm);
+            } else {
+              sub(cond, rn, rn, rm);
+            }
           }
           return;
         }
@@ -1814,69 +1954,136 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rd,
                               const MemOperand& operand) {
   // ldr ldrb ldrh ldrsb ldrsh str strb strh
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   VIXL_ASSERT(size.IsBest());
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
     int32_t offset = operand.GetOffsetImmediate();
-    switch (addrmode) {
-      case PreIndex:
-        // Pre-Indexed case:
-        // ldr r0, [r1, 12345]! will translate into
-        //   add r1, r1, 12345
-        //   ldr r0, [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, offset);
+    bool ok = true;
+    uint32_t mask = 0;
+    switch (type) {
+      case kLdr:
+      case kLdrb:
+      case kStr:
+      case kStrb:
+        if (IsUsingA32() || (addrmode == Offset)) {
+          mask = 0xfff;
         } else {
-          sub(cond, rn, rn, offset);
+          mask = 0xff;
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, size, rd, MemOperand(rn, Offset));
-        return;
-      case Offset: {
-        UseScratchRegisterScope temps(this);
-        // Allow using the destination as a scratch register if possible.
-        if ((type != kStr) && (type != kStrb) && (type != kStrh) &&
-            !rd.Is(rn)) {
-          temps.Include(rd);
-        }
-        Register scratch = temps.Acquire();
-        // Offset case:
-        // ldr r0, [r1, 12345] will translate into
-        //   add r0, r1, 12345
-        //   ldr r0, [r0]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, scratch, rn, offset);
+        break;
+      case kLdrsb:
+      case kLdrh:
+      case kLdrsh:
+      case kStrh:
+        if (IsUsingT32() && (addrmode == Offset)) {
+          mask = 0xfff;
         } else {
-          sub(cond, scratch, rn, offset);
+          mask = 0xff;
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, size, rd, MemOperand(scratch, Offset));
-        return;
+        break;
+      default:
+        ok = false;
+        break;
+    }
+    if (ok) {
+      bool negative;
+      // Try to maximize the offset use by the MemOperand (load_store_offset).
+      // Add or subtract the part which can't be used by the MemOperand
+      // (add_sub_offset).
+      int32_t add_sub_offset;
+      int32_t load_store_offset;
+      load_store_offset = offset & mask;
+      if (offset >= 0) {
+        negative = false;
+        add_sub_offset = offset & ~mask;
+      } else {
+        negative = true;
+        add_sub_offset = -offset & ~mask;
+        if (load_store_offset > 0) add_sub_offset += mask + 1;
       }
-      case PostIndex:
-        // Avoid the unpredictable case 'ldr r0, [r0], imm'
-        if (!rn.Is(rd)) {
-          // Post-indexed case:
-          // ldr r0. [r1], imm32 will translate into
+      switch (addrmode) {
+        case PreIndex:
+          // Pre-Indexed case:
+          // ldr r0, [r1, 12345]! will translate into
+          //   add r1, r1, 12345
           //   ldr r0, [r1]
-          //   movw ip. imm32 & 0xffffffff
-          //   movt ip, imm32 >> 16
-          //   add r1, r1, ip
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, size, rd, MemOperand(rn, Offset));
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, offset);
-          } else {
-            sub(cond, rn, rn, offset);
+          {
+            CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
+            if (negative) {
+              sub(cond, rn, rn, add_sub_offset);
+            } else {
+              add(cond, rn, rn, add_sub_offset);
+            }
+          }
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond,
+                                 size,
+                                 rd,
+                                 MemOperand(rn, load_store_offset, PreIndex));
+          }
+          return;
+        case Offset: {
+          UseScratchRegisterScope temps(this);
+          // Allow using the destination as a scratch register if possible.
+          if ((type != kStr) && (type != kStrb) && (type != kStrh) &&
+              !rd.Is(rn)) {
+            temps.Include(rd);
+          }
+          Register scratch = temps.Acquire();
+          // Offset case:
+          // ldr r0, [r1, 12345] will translate into
+          //   add r0, r1, 12345
+          //   ldr r0, [r0]
+          {
+            CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
+            if (negative) {
+              sub(cond, scratch, rn, add_sub_offset);
+            } else {
+              add(cond, scratch, rn, add_sub_offset);
+            }
+          }
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond,
+                                 size,
+                                 rd,
+                                 MemOperand(scratch, load_store_offset));
           }
           return;
         }
-        break;
+        case PostIndex:
+          // Avoid the unpredictable case 'ldr r0, [r0], imm'
+          if (!rn.Is(rd)) {
+            // Post-indexed case:
+            // ldr r0. [r1], imm32 will translate into
+            //   ldr r0, [r1]
+            //   movw ip. imm32 & 0xffffffff
+            //   movt ip, imm32 >> 16
+            //   add r1, r1, ip
+            {
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+              (this->*instruction)(cond,
+                                   size,
+                                   rd,
+                                   MemOperand(rn,
+                                              load_store_offset,
+                                              PostIndex));
+            }
+            {
+              CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
+              if (negative) {
+                sub(cond, rn, rn, add_sub_offset);
+              } else {
+                add(cond, rn, rn, add_sub_offset);
+              }
+            }
+            return;
+          }
+          break;
+      }
     }
   }
   if (operand.IsPlainRegister()) {
@@ -1889,14 +2096,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // ldr r0, [r1, r2]! will translate into
         //   add r1, r1, r2
         //   ldr r0, [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, rn, rn, rm);
-        } else {
-          sub(cond, rn, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, rn, rn, rm);
+          } else {
+            sub(cond, rn, rn, rm);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, size, rd, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, size, rd, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -1910,14 +2121,18 @@ void MacroAssembler::Delegate(InstructionType type,
         // ldr r0, [r1, r2] will translate into
         //   add r0, r1, r2
         //   ldr r0, [r0]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
-          add(cond, scratch, rn, rm);
-        } else {
-          sub(cond, scratch, rn, rm);
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          if (operand.GetSign().IsPlus()) {
+            add(cond, scratch, rn, rm);
+          } else {
+            sub(cond, scratch, rn, rm);
+          }
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, size, rd, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, size, rd, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -1927,13 +2142,17 @@ void MacroAssembler::Delegate(InstructionType type,
           // ldr r0. [r1], r2 will translate into
           //   ldr r0, [r1]
           //   add r1, r1, r2
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, size, rd, MemOperand(rn, Offset));
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, rm);
-          } else {
-            sub(cond, rn, rn, rm);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, size, rd, MemOperand(rn, Offset));
+          }
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, rm);
+            } else {
+              sub(cond, rn, rn, rm);
+            }
           }
           return;
         }
@@ -1951,7 +2170,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rt2,
                               const MemOperand& operand) {
   // ldaexd, ldrd, ldrexd, stlex, stlexb, stlexh, strd, strex, strexb, strexh
-  ContextScope context(this);
+  CONTEXT_SCOPE;
 
   bool can_delegate = true;
   if (((type == kLdrd) || (type == kStrd) || (type == kLdaexd) ||
@@ -1973,14 +2192,18 @@ void MacroAssembler::Delegate(InstructionType type,
           // ldrd r0, r1, [r2, 12345]! will translate into
           //   add r2, 12345
           //   ldrd r0, r1, [r2]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, offset);
-          } else {
-            sub(cond, rn, rn, offset);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, offset);
+            } else {
+              sub(cond, rn, rn, offset);
+            }
           }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+          }
           return;
         case Offset: {
           UseScratchRegisterScope temps(this);
@@ -2000,14 +2223,18 @@ void MacroAssembler::Delegate(InstructionType type,
           // ldrd r0, r1, [r2, 12345] will translate into
           //   add r0, r2, 12345
           //   ldrd r0, r1, [r0]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, scratch, rn, offset);
-          } else {
-            sub(cond, scratch, rn, offset);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, scratch, rn, offset);
+            } else {
+              sub(cond, scratch, rn, offset);
+            }
           }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(scratch, Offset));
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rt, rt2, MemOperand(scratch, Offset));
+          }
           return;
         }
         case PostIndex:
@@ -2019,13 +2246,17 @@ void MacroAssembler::Delegate(InstructionType type,
             //   movw ip. imm32 & 0xffffffff
             //   movt ip, imm32 >> 16
             //   add r2, ip
-            EnsureEmitFor(kMaxInstructionSizeInBytes);
-            (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
-            EnsureEmitFor(kMaxInstructionSizeInBytes);
-            if (operand.GetSign().IsPlus()) {
-              add(cond, rn, rn, offset);
-            } else {
-              sub(cond, rn, rn, offset);
+            {
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+              (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+            }
+            {
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+              if (operand.GetSign().IsPlus()) {
+                add(cond, rn, rn, offset);
+              } else {
+                sub(cond, rn, rn, offset);
+              }
             }
             return;
           }
@@ -2041,26 +2272,34 @@ void MacroAssembler::Delegate(InstructionType type,
           // ldrd r0, r1, [r2, r3]! will translate into
           //   add r2, r3
           //   ldrd r0, r1, [r2]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, rm);
-          } else {
-            sub(cond, rn, rn, rm);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, rm);
+            } else {
+              sub(cond, rn, rn, rm);
+            }
           }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+          }
           return;
         case PostIndex:
           // ldrd r0, r1, [r2], r3 will translate into
           //   ldrd r0, r1, [r2]
           //   add r2, r3
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, rm);
-          } else {
-            sub(cond, rn, rn, rm);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+          }
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, rm);
+            } else {
+              sub(cond, rn, rn, rm);
+            }
           }
           return;
         case Offset: {
@@ -2081,14 +2320,18 @@ void MacroAssembler::Delegate(InstructionType type,
           // ldrd r0, r1, [r2, r3] will translate into
           //   add r0, r2, r3
           //   ldrd r0, r1, [r0]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, scratch, rn, rm);
-          } else {
-            sub(cond, scratch, rn, rm);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, scratch, rn, rm);
+            } else {
+              sub(cond, scratch, rn, rm);
+            }
           }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(scratch, Offset));
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rt, rt2, MemOperand(scratch, Offset));
+          }
           return;
         }
       }
@@ -2105,25 +2348,32 @@ void MacroAssembler::Delegate(InstructionType type,
                               SRegister rd,
                               const MemOperand& operand) {
   // vldr.32 vstr.32
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
     int32_t offset = operand.GetOffsetImmediate();
+    VIXL_ASSERT(((offset > 0) && operand.GetSign().IsPlus()) ||
+                ((offset < 0) && operand.GetSign().IsMinus()) || (offset == 0));
+    if (rn.IsPC()) {
+      VIXL_ABORT_WITH_MSG(
+          "The MacroAssembler does not convert vldr or vstr with a PC base "
+          "register.\n");
+    }
     switch (addrmode) {
       case PreIndex:
         // Pre-Indexed case:
         // vldr.32 s0, [r1, 12345]! will translate into
         //   add r1, 12345
         //   vldr.32 s0, [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
+        if (offset != 0) {
+          CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
           add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -2132,14 +2382,15 @@ void MacroAssembler::Delegate(InstructionType type,
         // vldr.32 s0, [r1, 12345] will translate into
         //   add ip, r1, 12345
         //   vldr.32 s0, [ip]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
+        {
+          VIXL_ASSERT(offset != 0);
+          CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
           add(cond, scratch, rn, offset);
-        } else {
-          sub(cond, scratch, rn, offset);
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, dt, rd, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, dt, rd, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -2149,13 +2400,13 @@ void MacroAssembler::Delegate(InstructionType type,
         //   movw ip. imm32 & 0xffffffff
         //   movt ip, imm32 >> 16
         //   add r1, ip
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
+        }
+        if (offset != 0) {
+          CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
           add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
         }
         return;
     }
@@ -2172,7 +2423,7 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rt2,
                               const MemOperand& operand) {
   // stlexd strexd
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (IsUsingT32() ||
       (((rt.GetCode() & 1) == 0) && !rt.Is(lr) &&
        (((rt.GetCode() + 1) % kNumberOfRegisters) == rt2.GetCode()))) {
@@ -2186,14 +2437,18 @@ void MacroAssembler::Delegate(InstructionType type,
           // strexd r5, r0, r1, [r2, 12345]! will translate into
           //   add r2, 12345
           //   strexd r5,  r0, r1, [r2]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, offset);
-          } else {
-            sub(cond, rn, rn, offset);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, rn, rn, offset);
+            } else {
+              sub(cond, rn, rn, offset);
+            }
           }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rd, rt, rt2, MemOperand(rn, Offset));
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond, rd, rt, rt2, MemOperand(rn, Offset));
+          }
           return;
         case Offset: {
           UseScratchRegisterScope temps(this);
@@ -2204,14 +2459,22 @@ void MacroAssembler::Delegate(InstructionType type,
           // strexd r5, r0, r1, [r2, 12345] will translate into
           //   add r5, r2, 12345
           //   strexd r5, r0, r1, [r5]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, scratch, rn, offset);
-          } else {
-            sub(cond, scratch, rn, offset);
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            if (operand.GetSign().IsPlus()) {
+              add(cond, scratch, rn, offset);
+            } else {
+              sub(cond, scratch, rn, offset);
+            }
           }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rd, rt, rt2, MemOperand(scratch, Offset));
+          {
+            CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+            (this->*instruction)(cond,
+                                 rd,
+                                 rt,
+                                 rt2,
+                                 MemOperand(scratch, Offset));
+          }
           return;
         }
         case PostIndex:
@@ -2223,13 +2486,17 @@ void MacroAssembler::Delegate(InstructionType type,
             //   movw ip. imm32 & 0xffffffff
             //   movt ip, imm32 >> 16
             //   add r2, ip
-            EnsureEmitFor(kMaxInstructionSizeInBytes);
-            (this->*instruction)(cond, rd, rt, rt2, MemOperand(rn, Offset));
-            EnsureEmitFor(kMaxInstructionSizeInBytes);
-            if (operand.GetSign().IsPlus()) {
-              add(cond, rn, rn, offset);
-            } else {
-              sub(cond, rn, rn, offset);
+            {
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+              (this->*instruction)(cond, rd, rt, rt2, MemOperand(rn, Offset));
+            }
+            {
+              CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+              if (operand.GetSign().IsPlus()) {
+                add(cond, rn, rn, offset);
+              } else {
+                sub(cond, rn, rn, offset);
+              }
             }
             return;
           }
@@ -2248,25 +2515,32 @@ void MacroAssembler::Delegate(InstructionType type,
                               DRegister rd,
                               const MemOperand& operand) {
   // vldr.64 vstr.64
-  ContextScope context(this);
+  CONTEXT_SCOPE;
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
     int32_t offset = operand.GetOffsetImmediate();
+    VIXL_ASSERT(((offset > 0) && operand.GetSign().IsPlus()) ||
+                ((offset < 0) && operand.GetSign().IsMinus()) || (offset == 0));
+    if (rn.IsPC()) {
+      VIXL_ABORT_WITH_MSG(
+          "The MacroAssembler does not convert vldr or vstr with a PC base "
+          "register.\n");
+    }
     switch (addrmode) {
       case PreIndex:
         // Pre-Indexed case:
         // vldr.64 d0, [r1, 12345]! will translate into
         //   add r1, 12345
         //   vldr.64 d0, [r1]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
+        if (offset != 0) {
+          CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
           add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
+        }
         return;
       case Offset: {
         UseScratchRegisterScope temps(this);
@@ -2275,14 +2549,15 @@ void MacroAssembler::Delegate(InstructionType type,
         // vldr.64 d0, [r1, 12345] will translate into
         //   add ip, r1, 12345
         //   vldr.32 s0, [ip]
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
+        {
+          VIXL_ASSERT(offset != 0);
+          CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
           add(cond, scratch, rn, offset);
-        } else {
-          sub(cond, scratch, rn, offset);
         }
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, dt, rd, MemOperand(scratch, Offset));
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, dt, rd, MemOperand(scratch, Offset));
+        }
         return;
       }
       case PostIndex:
@@ -2292,90 +2567,18 @@ void MacroAssembler::Delegate(InstructionType type,
         //   movw ip. imm32 & 0xffffffff
         //   movt ip, imm32 >> 16
         //   add r1, ip
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
-        EnsureEmitFor(kMaxInstructionSizeInBytes);
-        if (operand.GetSign().IsPlus()) {
+        {
+          CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+          (this->*instruction)(cond, dt, rd, MemOperand(rn, Offset));
+        }
+        if (offset != 0) {
+          CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
           add(cond, rn, rn, offset);
-        } else {
-          sub(cond, rn, rn, offset);
         }
         return;
     }
   }
   Assembler::Delegate(type, instruction, cond, dt, rd, operand);
-}
-
-
-void MacroAssembler::Delegate(InstructionType type,
-                              InstructionCondDtNrlMop instruction,
-                              Condition cond,
-                              DataType dt,
-                              const NeonRegisterList& nreglist,
-                              const MemOperand& operand) {
-  // vld3 vst3
-  ContextScope context(this);
-  const Register& rn = operand.GetBaseRegister();
-
-  bool can_delegate = !rn.Is(pc) && (nreglist.GetLength() == 3) &&
-                      (dt.Is(Untyped8) || dt.Is(Untyped16) || dt.Is(Untyped32));
-
-  if (can_delegate) {
-    if (operand.IsImmediate()) {
-      AddrMode addrmode = operand.GetAddrMode();
-      int32_t offset = operand.GetOffsetImmediate();
-      switch (addrmode) {
-        case PreIndex:
-          // Pre-Indexed case:
-          // vld3.8 {d0-d2}, [r1, 12345]! will translate into
-          //   add r1, 12345
-          //   vld3.8 {d0-d2}, [r1]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, offset);
-          } else {
-            sub(cond, rn, rn, offset);
-          }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, dt, nreglist, MemOperand(rn, Offset));
-          return;
-        case Offset: {
-          UseScratchRegisterScope temps(this);
-          Register scratch = temps.Acquire();
-          // Offset case:
-          // vld3.16 {d0-d2}[7], [r1, 12345] will translate into
-          //   add ip, r1, 12345
-          //   vld3.8 {d0-d2}[7], [ip]
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, scratch, rn, offset);
-          } else {
-            sub(cond, scratch, rn, offset);
-          }
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, dt, nreglist, MemOperand(scratch, Offset));
-          return;
-        }
-        case PostIndex:
-          // Post-indexed case:
-          // vld3.32 {d0-d2}, [r1], imm32 will translate into
-          //   vld3.8 {d0-d2}, [ip]
-          //   movw ip. imm32 & 0xffffffff
-          //   movt ip, imm32 >> 16
-          //   add r1, ip
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, dt, nreglist, MemOperand(rn, Offset));
-          EnsureEmitFor(kMaxInstructionSizeInBytes);
-          if (operand.GetSign().IsPlus()) {
-            add(cond, rn, rn, offset);
-          } else {
-            sub(cond, rn, rn, offset);
-          }
-          return;
-      }
-    }
-  }
-  Assembler::Delegate(type, instruction, cond, dt, nreglist, operand);
 }
 
 
@@ -2388,11 +2591,17 @@ void MacroAssembler::Delegate(InstructionType type,
   VIXL_ASSERT(type == kMsr);
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
-  EnsureEmitFor(kMaxInstructionSizeInBytes);
-  mov(cond, scratch, operand);
-  EnsureEmitFor(kMaxInstructionSizeInBytes);
+  {
+    CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+    mov(cond, scratch, operand);
+  }
+  CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
   msr(cond, spec_reg, scratch);
 }
+
+#undef CONTEXT_SCOPE
+#undef TOSTRING
+#undef STRINGIFY
 
 // Start of generated code.
 // End of generated code.

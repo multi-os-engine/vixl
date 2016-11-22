@@ -27,12 +27,12 @@
 #ifndef VIXL_AARCH64_DISASM_AARCH64_H
 #define VIXL_AARCH64_DISASM_AARCH64_H
 
-#include "globals-vixl.h"
-#include "utils-vixl.h"
+#include "../globals-vixl.h"
+#include "../utils-vixl.h"
 
-#include "aarch64/decoder-aarch64.h"
-#include "aarch64/instructions-aarch64.h"
-#include "aarch64/operands-aarch64.h"
+#include "decoder-aarch64.h"
+#include "instructions-aarch64.h"
+#include "operands-aarch64.h"
 
 namespace vixl {
 namespace aarch64 {
@@ -45,7 +45,8 @@ class Disassembler : public DecoderVisitor {
   char* GetOutput();
 
 // Declare all Visitor functions.
-#define DECLARE(A) virtual void Visit##A(const Instruction* instr);
+#define DECLARE(A) \
+  virtual void Visit##A(const Instruction* instr) VIXL_OVERRIDE;
   VISITOR_LIST(DECLARE)
 #undef DECLARE
 
@@ -171,7 +172,7 @@ class PrintDisassembler : public Disassembler {
   void DisassembleBuffer(const Instruction* start, uint64_t size);
 
  protected:
-  virtual void ProcessOutput(const Instruction* instr);
+  virtual void ProcessOutput(const Instruction* instr) VIXL_OVERRIDE;
 
  private:
   FILE* stream_;

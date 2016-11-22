@@ -53,6 +53,9 @@ extern "C" {
 
 #include "platform-vixl.h"
 
+#ifdef VIXL_NEGATIVE_TESTING
+#include <stdexcept>
+#endif
 
 namespace vixl {
 
@@ -68,19 +71,47 @@ const int kBitsPerByte = 8;
 
 }  // namespace vixl
 
-#define VIXL_ABORT()                              \
-  do {                                            \
-    printf("in %s, line %i", __FILE__, __LINE__); \
-    abort();                                      \
+// Detect the host's pointer size.
+#if (UINTPTR_MAX == UINT32_MAX)
+#define VIXL_HOST_POINTER_32
+#elif(UINTPTR_MAX == UINT64_MAX)
+#define VIXL_HOST_POINTER_64
+#else
+#error "Unsupported host pointer size."
+#endif
+
+#ifdef VIXL_NEGATIVE_TESTING
+#define VIXL_ABORT()                      \
+  do {                                    \
+    throw std::runtime_error("Aborting"); \
+  } while (false)
+#define VIXL_ABORT_WITH_MSG(msg)   \
+  do {                             \
+    throw std::runtime_error(msg); \
+  } while (false)
+#define VIXL_CHECK(condition)                 \
+  if (!(condition)) {                         \
+    throw std::runtime_error("Check failed"); \
+  }
+#else
+#define VIXL_ABORT()                                \
+  do {                                              \
+    printf("in %s, line %i\n", __FILE__, __LINE__); \
+    abort();                                        \
   } while (false)
 #define VIXL_ABORT_WITH_MSG(msg) \
   {                              \
     printf("%s", msg);           \
     VIXL_ABORT();                \
   }
+#define VIXL_CHECK(condition)                                                 \
+  if (!(condition)) {                                                         \
+    printf("Assertion: " #condition " in %s, line %i\n", __FILE__, __LINE__); \
+    abort();                                                                  \
+  }
+#endif
 #ifdef VIXL_DEBUG
 #define VIXL_ASSERT(condition) assert(condition)
-#define VIXL_CHECK(condition) VIXL_ASSERT(condition)
 #define VIXL_UNIMPLEMENTED()            \
   do {                                  \
     fprintf(stderr, "UNIMPLEMENTED\t"); \
@@ -93,7 +124,6 @@ const int kBitsPerByte = 8;
   } while (false)
 #else
 #define VIXL_ASSERT(condition) ((void)0)
-#define VIXL_CHECK(condition) assert(condition)
 #define VIXL_UNIMPLEMENTED() ((void)0)
 #define VIXL_UNREACHABLE() ((void)0)
 #endif
@@ -148,7 +178,7 @@ inline void USE(const T1&, const T2&, const T3&, const T4&) {}
 // Note: This option is only available for Clang. And will only be enabled for
 // C++11(201103L).
 #if __has_warning("-Wimplicit-fallthrough") && __cplusplus >= 201103L
-#define VIXL_FALLTHROUGH() [[clang::fallthrough]]  // NOLINT
+#define VIXL_FALLTHROUGH() [[clang::fallthrough]]
 #else
 #define VIXL_FALLTHROUGH() \
   do {                     \
@@ -156,7 +186,7 @@ inline void USE(const T1&, const T2&, const T3&, const T4&) {}
 #endif
 
 #if __cplusplus >= 201103L
-#define VIXL_NO_RETURN [[noreturn]]  // NOLINT
+#define VIXL_NO_RETURN [[noreturn]]
 #else
 #define VIXL_NO_RETURN __attribute__((noreturn))
 #endif
@@ -164,6 +194,12 @@ inline void USE(const T1&, const T2&, const T3&, const T4&) {}
 #define VIXL_NO_RETURN_IN_DEBUG_MODE VIXL_NO_RETURN
 #else
 #define VIXL_NO_RETURN_IN_DEBUG_MODE
+#endif
+
+#if __cplusplus >= 201103L
+#define VIXL_OVERRIDE override
+#else
+#define VIXL_OVERRIDE
 #endif
 
 // Some functions might only be marked as "noreturn" for the DEBUG build. This
