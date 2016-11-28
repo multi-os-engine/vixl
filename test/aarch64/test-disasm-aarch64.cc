@@ -69,14 +69,14 @@
     masm.ASM;                                                                  \
   }                                                                            \
   masm.FinalizeCode();                                                         \
-  decoder.Decode(masm.GetStartAddress<Instruction*>());                        \
-  encoding = *masm.GetStartAddress<uint32_t*>();                               \
+  decoder.Decode(masm.GetBuffer()->GetStartAddress<Instruction*>());           \
+  encoding = *masm.GetBuffer()->GetStartAddress<uint32_t*>();                  \
   if (strcmp(disasm.GetOutput(), EXP) != 0) {                                  \
     printf("\nEncoding: %08" PRIx32 "\nExpected: %s\nFound:    %s\n",          \
            encoding, EXP, disasm.GetOutput());                                 \
     abort();                                                                   \
   }                                                                            \
-  if (Test::trace_sim()) {                                                     \
+  if (Test::disassemble()) {                                                   \
     printf("%08" PRIx32 "\t%s\n", encoding, disasm.GetOutput());               \
   }
 
@@ -87,14 +87,14 @@
     masm.ASM;                                                                  \
   }                                                                            \
   masm.FinalizeCode();                                                         \
-  decoder.Decode(masm.GetStartAddress<Instruction*>());                        \
-  encoding = *masm.GetStartAddress<uint32_t*>();                               \
+  decoder.Decode(masm.GetBuffer()->GetStartAddress<Instruction*>());           \
+  encoding = *masm.GetBuffer()->GetStartAddress<uint32_t*>();                  \
   if (strncmp(disasm.GetOutput(), EXP, strlen(EXP)) != 0) {                    \
     printf("\nEncoding: %08" PRIx32 "\nExpected: %s\nFound:    %s\n",          \
            encoding, EXP, disasm.GetOutput());                                 \
     abort();                                                                   \
   }                                                                            \
-  if (Test::trace_sim()) {                                                     \
+  if (Test::disassemble()) {                                                   \
     printf("%08" PRIx32 "\t%s\n", encoding, disasm.GetOutput());               \
   }
 
@@ -104,13 +104,13 @@
   masm.FinalizeCode();                                                         \
   std::string res;                                                             \
                                                                                \
-  Instruction* instruction = masm.GetOffsetAddress<Instruction*>(0);           \
-  Instruction* end = masm.GetOffsetAddress<Instruction*>(                      \
-      masm.GetSizeOfCodeGenerated());                                          \
+  Instruction* instruction =                                                   \
+      masm.GetBuffer()->GetStartAddress<Instruction*>();                       \
+  Instruction* end = masm.GetCursorAddress<Instruction*>();                    \
   while (instruction != end) {                                                 \
     decoder.Decode(instruction);                                               \
     res.append(disasm.GetOutput());                                            \
-    if (Test::trace_sim()) {                                                   \
+    if (Test::disassemble()) {                                                 \
       encoding = *reinterpret_cast<uint32_t*>(instruction);                    \
       printf("%08" PRIx32 "\t%s\n", encoding, disasm.GetOutput());             \
     }                                                                          \
@@ -919,14 +919,14 @@ TEST(dp_2_source) {
 TEST(adr) {
   SETUP();
 
-  COMPARE_PREFIX(adr(x0, 0), "adr x0, #+0x0");
+  COMPARE_PREFIX(adr(x0, INT64_C(0)), "adr x0, #+0x0");
   COMPARE_PREFIX(adr(x1, 1), "adr x1, #+0x1");
   COMPARE_PREFIX(adr(x2, -1), "adr x2, #-0x1");
   COMPARE_PREFIX(adr(x3, 4), "adr x3, #+0x4");
   COMPARE_PREFIX(adr(x4, -4), "adr x4, #-0x4");
   COMPARE_PREFIX(adr(x5, 0x000fffff), "adr x5, #+0xfffff");
   COMPARE_PREFIX(adr(x6, -0x00100000), "adr x6, #-0x100000");
-  COMPARE_PREFIX(adr(xzr, 0), "adr xzr, #+0x0");
+  COMPARE_PREFIX(adr(xzr, INT64_C(0)), "adr xzr, #+0x0");
 
   CLEANUP();
 }
@@ -935,14 +935,14 @@ TEST(adr) {
 TEST(adrp) {
   SETUP();
 
-  COMPARE_PREFIX(adrp(x0, 0), "adrp x0, #+0x0");
+  COMPARE_PREFIX(adrp(x0, INT64_C(0)), "adrp x0, #+0x0");
   COMPARE_PREFIX(adrp(x1, 1), "adrp x1, #+0x1000");
   COMPARE_PREFIX(adrp(x2, -1), "adrp x2, #-0x1000");
   COMPARE_PREFIX(adrp(x3, 4), "adrp x3, #+0x4000");
   COMPARE_PREFIX(adrp(x4, -4), "adrp x4, #-0x4000");
   COMPARE_PREFIX(adrp(x5, 0x000fffff), "adrp x5, #+0xfffff000");
   COMPARE_PREFIX(adrp(x6, -0x00100000), "adrp x6, #-0x100000000");
-  COMPARE_PREFIX(adrp(xzr, 0), "adrp xzr, #+0x0");
+  COMPARE_PREFIX(adrp(xzr, INT64_C(0)), "adrp xzr, #+0x0");
 
   CLEANUP();
 }
@@ -951,7 +951,7 @@ TEST(adrp) {
 TEST(branch) {
   SETUP();
 
-  #define INST_OFF(x) ((x) >> kInstructionSizeLog2)
+  #define INST_OFF(x) (INT64_C(x) >> kInstructionSizeLog2)
   COMPARE_PREFIX(b(INST_OFF(0x4)), "b #+0x4");
   COMPARE_PREFIX(b(INST_OFF(-0x4)), "b #-0x4");
   COMPARE_PREFIX(b(INST_OFF(0x7fffffc)), "b #+0x7fffffc");
@@ -1905,27 +1905,27 @@ TEST(load_literal_macro) {
 TEST(load_literal) {
   SETUP();
 
-  COMPARE_PREFIX(ldr(x20, 0), "ldr x20, pc+0");
+  COMPARE_PREFIX(ldr(x20, INT64_C(0)), "ldr x20, pc+0");
   COMPARE_PREFIX(ldr(x20, 1), "ldr x20, pc+4");
   COMPARE_PREFIX(ldr(x20, -1), "ldr x20, pc-4");
   COMPARE_PREFIX(ldr(x20, 0x3ffff), "ldr x20, pc+1048572");
   COMPARE_PREFIX(ldr(x20, -0x40000), "ldr x20, pc-1048576");
-  COMPARE_PREFIX(ldr(w21, 0), "ldr w21, pc+0");
+  COMPARE_PREFIX(ldr(w21, INT64_C(0)), "ldr w21, pc+0");
   COMPARE_PREFIX(ldr(w21, 1), "ldr w21, pc+4");
   COMPARE_PREFIX(ldr(w21, -1), "ldr w21, pc-4");
   COMPARE_PREFIX(ldr(w21, 0x3ffff), "ldr w21, pc+1048572");
   COMPARE_PREFIX(ldr(w21, -0x40000), "ldr w21, pc-1048576");
-  COMPARE_PREFIX(ldr(d22, 0), "ldr d22, pc+0");
+  COMPARE_PREFIX(ldr(d22, INT64_C(0)), "ldr d22, pc+0");
   COMPARE_PREFIX(ldr(d22, 1), "ldr d22, pc+4");
   COMPARE_PREFIX(ldr(d22, -1), "ldr d22, pc-4");
   COMPARE_PREFIX(ldr(d22, 0x3ffff), "ldr d22, pc+1048572");
   COMPARE_PREFIX(ldr(d22, -0x40000), "ldr d22, pc-1048576");
-  COMPARE_PREFIX(ldr(s23, 0), "ldr s23, pc+0");
+  COMPARE_PREFIX(ldr(s23, INT64_C(0)), "ldr s23, pc+0");
   COMPARE_PREFIX(ldr(s23, 1), "ldr s23, pc+4");
   COMPARE_PREFIX(ldr(s23, -1), "ldr s23, pc-4");
   COMPARE_PREFIX(ldr(s23, 0x3ffff), "ldr s23, pc+1048572");
   COMPARE_PREFIX(ldr(s23, -0x40000), "ldr s23, pc-1048576");
-  COMPARE_PREFIX(ldrsw(x24, 0), "ldrsw x24, pc+0");
+  COMPARE_PREFIX(ldrsw(x24, INT64_C(0)), "ldrsw x24, pc+0");
   COMPARE_PREFIX(ldrsw(x24, 1), "ldrsw x24, pc+4");
   COMPARE_PREFIX(ldrsw(x24, -1), "ldrsw x24, pc-4");
   COMPARE_PREFIX(ldrsw(x24, 0x3ffff), "ldrsw x24, pc+1048572");
@@ -1978,7 +1978,7 @@ TEST(prfm_operations) {
 
   for (int i = 0; i < (1 << ImmPrefetchOperation_width); i++) {
     PrefetchOperation op = static_cast<PrefetchOperation>(i);
-    COMPARE_PREFIX(prfm(op, 0), expected[i]);
+    COMPARE_PREFIX(prfm(op, INT64_C(0)), expected[i]);
     COMPARE_PREFIX(prfm(op, MemOperand(x0, 0)), expected[i]);
     COMPARE_PREFIX(prfm(op, MemOperand(x0, x1)), expected[i]);
   }
@@ -2076,7 +2076,7 @@ TEST(prfm_regoffset) {
 TEST(prfm_literal) {
   SETUP();
 
-  COMPARE_PREFIX(prfm(PSTL1KEEP, 0), "prfm pstl1keep, pc+0");
+  COMPARE_PREFIX(prfm(PSTL1KEEP, INT64_C(0)), "prfm pstl1keep, pc+0");
   COMPARE_PREFIX(prfm(PSTL1STRM, 1), "prfm pstl1strm, pc+4");
   COMPARE_PREFIX(prfm(PSTL2KEEP, -1), "prfm pstl2keep, pc-4");
   COMPARE_PREFIX(prfm(PSTL2STRM, 0x3ffff), "prfm pstl2strm, pc+1048572");
@@ -5063,6 +5063,43 @@ TEST(neon_copy) {
 }
 
 
+TEST(neon_table) {
+  SETUP_MACRO();
+
+  COMPARE(Tbl(v0.V8B(), v1.V16B(), v2.V8B()), "tbl v0.8b, {v1.16b}, v2.8b");
+  COMPARE(Tbl(v3.V8B(), v4.V16B(), v5.V16B(), v6.V8B()),
+          "tbl v3.8b, {v4.16b, v5.16b}, v6.8b");
+  COMPARE(Tbl(v7.V8B(), v8.V16B(), v9.V16B(), v10.V16B(), v11.V8B()),
+          "tbl v7.8b, {v8.16b, v9.16b, v10.16b}, v11.8b");
+  COMPARE(Tbl(v12.V8B(), v13.V16B(), v14.V16B(), v15.V16B(), v16.V16B(), v17.V8B()),
+          "tbl v12.8b, {v13.16b, v14.16b, v15.16b, v16.16b}, v17.8b");
+  COMPARE(Tbl(v18.V16B(), v19.V16B(), v20.V16B()), "tbl v18.16b, {v19.16b}, v20.16b");
+  COMPARE(Tbl(v21.V16B(), v22.V16B(), v23.V16B(), v24.V16B()),
+          "tbl v21.16b, {v22.16b, v23.16b}, v24.16b");
+  COMPARE(Tbl(v25.V16B(), v26.V16B(), v27.V16B(), v28.V16B(), v29.V16B()),
+          "tbl v25.16b, {v26.16b, v27.16b, v28.16b}, v29.16b");
+  COMPARE(Tbl(v30.V16B(), v31.V16B(), v0.V16B(), v1.V16B(), v2.V16B(), v3.V16B()),
+          "tbl v30.16b, {v31.16b, v0.16b, v1.16b, v2.16b}, v3.16b");
+
+  COMPARE(Tbx(v0.V8B(), v1.V16B(), v2.V8B()), "tbx v0.8b, {v1.16b}, v2.8b");
+  COMPARE(Tbx(v3.V8B(), v4.V16B(), v5.V16B(), v6.V8B()),
+          "tbx v3.8b, {v4.16b, v5.16b}, v6.8b");
+  COMPARE(Tbx(v7.V8B(), v8.V16B(), v9.V16B(), v10.V16B(), v11.V8B()),
+          "tbx v7.8b, {v8.16b, v9.16b, v10.16b}, v11.8b");
+  COMPARE(Tbx(v12.V8B(), v13.V16B(), v14.V16B(), v15.V16B(), v16.V16B(), v17.V8B()),
+          "tbx v12.8b, {v13.16b, v14.16b, v15.16b, v16.16b}, v17.8b");
+  COMPARE(Tbx(v18.V16B(), v19.V16B(), v20.V16B()), "tbx v18.16b, {v19.16b}, v20.16b");
+  COMPARE(Tbx(v21.V16B(), v22.V16B(), v23.V16B(), v24.V16B()),
+          "tbx v21.16b, {v22.16b, v23.16b}, v24.16b");
+  COMPARE(Tbx(v25.V16B(), v26.V16B(), v27.V16B(), v28.V16B(), v29.V16B()),
+          "tbx v25.16b, {v26.16b, v27.16b, v28.16b}, v29.16b");
+  COMPARE(Tbx(v30.V16B(), v31.V16B(), v0.V16B(), v1.V16B(), v2.V16B(), v3.V16B()),
+          "tbx v30.16b, {v31.16b, v0.16b, v1.16b, v2.16b}, v3.16b");
+
+  CLEANUP();
+}
+
+
 TEST(neon_extract) {
   SETUP_MACRO();
 
@@ -5936,60 +5973,63 @@ TEST(address_map) {
   // Check that we can disassemble from a fake base address.
   SETUP();
 
-  disasm.MapCodeAddress(0, masm.GetStartAddress<Instruction*>());
-  COMPARE(ldr(x0, 0), "ldr x0, pc+0 (addr 0x0)");
+  disasm.MapCodeAddress(0, masm.GetBuffer()->GetStartAddress<Instruction*>());
+  COMPARE(ldr(x0, INT64_C(0)), "ldr x0, pc+0 (addr 0x0)");
   COMPARE(ldr(x0, -1), "ldr x0, pc-4 (addr -0x4)");
   COMPARE(ldr(x0, 1), "ldr x0, pc+4 (addr 0x4)");
-  COMPARE(prfm(PLIL1KEEP, 0), "prfm plil1keep, pc+0 (addr 0x0)");
+  COMPARE(prfm(PLIL1KEEP, INT64_C(0)), "prfm plil1keep, pc+0 (addr 0x0)");
   COMPARE(prfm(PLIL1KEEP, -1), "prfm plil1keep, pc-4 (addr -0x4)");
   COMPARE(prfm(PLIL1KEEP, 1), "prfm plil1keep, pc+4 (addr 0x4)");
-  COMPARE(adr(x0, 0), "adr x0, #+0x0 (addr 0x0)");
+  COMPARE(adr(x0, INT64_C(0)), "adr x0, #+0x0 (addr 0x0)");
   COMPARE(adr(x0, -1), "adr x0, #-0x1 (addr -0x1)");
   COMPARE(adr(x0, 1), "adr x0, #+0x1 (addr 0x1)");
-  COMPARE(adrp(x0, 0), "adrp x0, #+0x0 (addr 0x0)");
+  COMPARE(adrp(x0, INT64_C(0)), "adrp x0, #+0x0 (addr 0x0)");
   COMPARE(adrp(x0, -1), "adrp x0, #-0x1000 (addr -0x1000)");
   COMPARE(adrp(x0, 1), "adrp x0, #+0x1000 (addr 0x1000)");
-  COMPARE(b(0), "b #+0x0 (addr 0x0)");
+  COMPARE(b(INT64_C(0)), "b #+0x0 (addr 0x0)");
   COMPARE(b(-1), "b #-0x4 (addr -0x4)");
   COMPARE(b(1), "b #+0x4 (addr 0x4)");
 
-  disasm.MapCodeAddress(0x1234, masm.GetStartAddress<Instruction*>());
-  COMPARE(ldr(x0, 0), "ldr x0, pc+0 (addr 0x1234)");
+  disasm.MapCodeAddress(0x1234,
+                        masm.GetBuffer()->GetStartAddress<Instruction*>());
+  COMPARE(ldr(x0, INT64_C(0)), "ldr x0, pc+0 (addr 0x1234)");
   COMPARE(ldr(x0, -1), "ldr x0, pc-4 (addr 0x1230)");
   COMPARE(ldr(x0, 1), "ldr x0, pc+4 (addr 0x1238)");
-  COMPARE(prfm(PLIL1KEEP, 0), "prfm plil1keep, pc+0 (addr 0x1234)");
+  COMPARE(prfm(PLIL1KEEP, INT64_C(0)), "prfm plil1keep, pc+0 (addr 0x1234)");
   COMPARE(prfm(PLIL1KEEP, -1), "prfm plil1keep, pc-4 (addr 0x1230)");
   COMPARE(prfm(PLIL1KEEP, 1), "prfm plil1keep, pc+4 (addr 0x1238)");
-  COMPARE(adr(x0, 0), "adr x0, #+0x0 (addr 0x1234)");
+  COMPARE(adr(x0, INT64_C(0)), "adr x0, #+0x0 (addr 0x1234)");
   COMPARE(adr(x0, -1), "adr x0, #-0x1 (addr 0x1233)");
   COMPARE(adr(x0, 1), "adr x0, #+0x1 (addr 0x1235)");
-  COMPARE(adrp(x0, 0), "adrp x0, #+0x0 (addr 0x1000)");
+  COMPARE(adrp(x0, INT64_C(0)), "adrp x0, #+0x0 (addr 0x1000)");
   COMPARE(adrp(x0, -1), "adrp x0, #-0x1000 (addr 0x0)");
   COMPARE(adrp(x0, 1), "adrp x0, #+0x1000 (addr 0x2000)");
-  COMPARE(b(0), "b #+0x0 (addr 0x1234)");
+  COMPARE(b(INT64_C(0)), "b #+0x0 (addr 0x1234)");
   COMPARE(b(-1), "b #-0x4 (addr 0x1230)");
   COMPARE(b(1), "b #+0x4 (addr 0x1238)");
 
   // Check that 64-bit addresses work.
   disasm.MapCodeAddress(UINT64_C(0x100000000),
-                        masm.GetStartAddress<Instruction*>());
-  COMPARE(ldr(x0, 0), "ldr x0, pc+0 (addr 0x100000000)");
+                        masm.GetBuffer()->GetStartAddress<Instruction*>());
+  COMPARE(ldr(x0, INT64_C(0)), "ldr x0, pc+0 (addr 0x100000000)");
   COMPARE(ldr(x0, -1), "ldr x0, pc-4 (addr 0xfffffffc)");
   COMPARE(ldr(x0, 1), "ldr x0, pc+4 (addr 0x100000004)");
-  COMPARE(prfm(PLIL1KEEP, 0), "prfm plil1keep, pc+0 (addr 0x100000000)");
+  COMPARE(prfm(PLIL1KEEP, INT64_C(0)),
+          "prfm plil1keep, pc+0 (addr 0x100000000)");
   COMPARE(prfm(PLIL1KEEP, -1), "prfm plil1keep, pc-4 (addr 0xfffffffc)");
   COMPARE(prfm(PLIL1KEEP, 1), "prfm plil1keep, pc+4 (addr 0x100000004)");
-  COMPARE(adr(x0, 0), "adr x0, #+0x0 (addr 0x100000000)");
+  COMPARE(adr(x0, INT64_C(0)), "adr x0, #+0x0 (addr 0x100000000)");
   COMPARE(adr(x0, -1), "adr x0, #-0x1 (addr 0xffffffff)");
   COMPARE(adr(x0, 1), "adr x0, #+0x1 (addr 0x100000001)");
-  COMPARE(adrp(x0, 0), "adrp x0, #+0x0 (addr 0x100000000)");
+  COMPARE(adrp(x0, INT64_C(0)), "adrp x0, #+0x0 (addr 0x100000000)");
   COMPARE(adrp(x0, -1), "adrp x0, #-0x1000 (addr 0xfffff000)");
   COMPARE(adrp(x0, 1), "adrp x0, #+0x1000 (addr 0x100001000)");
-  COMPARE(b(0), "b #+0x0 (addr 0x100000000)");
+  COMPARE(b(INT64_C(0)), "b #+0x0 (addr 0x100000000)");
   COMPARE(b(-1), "b #-0x4 (addr 0xfffffffc)");
   COMPARE(b(1), "b #+0x4 (addr 0x100000004)");
 
-  disasm.MapCodeAddress(0xfffffffc, masm.GetStartAddress<Instruction*>());
+  disasm.MapCodeAddress(0xfffffffc,
+                        masm.GetBuffer()->GetStartAddress<Instruction*>());
   COMPARE(ldr(x0, 1), "ldr x0, pc+4 (addr 0x100000000)");
   COMPARE(prfm(PLIL1KEEP, 1), "prfm plil1keep, pc+4 (addr 0x100000000)");
   COMPARE(b(1), "b #+0x4 (addr 0x100000000)");
@@ -5999,7 +6039,7 @@ TEST(address_map) {
   // Check that very large offsets are handled properly. This detects misuse of
   // the host's ptrdiff_t type when run on a 32-bit host. Only adrp is capable
   // of encoding such offsets.
-  disasm.MapCodeAddress(0, masm.GetStartAddress<Instruction*>());
+  disasm.MapCodeAddress(0, masm.GetBuffer()->GetStartAddress<Instruction*>());
   COMPARE(adrp(x0, 0x000fffff), "adrp x0, #+0xfffff000 (addr 0xfffff000)");
   COMPARE(adrp(x0, -0x00100000), "adrp x0, #-0x100000000 (addr -0x100000000)");
 

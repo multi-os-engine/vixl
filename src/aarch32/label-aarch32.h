@@ -41,6 +41,9 @@ extern "C" {
 namespace vixl {
 namespace aarch32 {
 
+class VeneerPoolManager;
+class MacroAssembler;
+
 class Label {
  public:
   typedef int32_t Offset;
@@ -65,10 +68,10 @@ class Label {
 
   class ForwardReference {
    public:
-    ForwardReference(ptrdiff_t location, const LabelEmitOperator& op, bool t32)
+    ForwardReference(int32_t location, const LabelEmitOperator& op, bool t32)
         : location_(location), op_(op), is_t32_(t32), is_branch_(false) {}
     Offset GetMaxForwardDistance() const { return op_.GetMaxForwardDistance(); }
-    ptrdiff_t GetLocation() const { return location_; }
+    int32_t GetLocation() const { return location_; }
     uint32_t GetStatePCOffset() const {
       return is_t32_ ? kT32PcDelta : kA32PcDelta;
     }
@@ -81,7 +84,7 @@ class Label {
     }
 
    private:
-    ptrdiff_t location_;
+    int32_t location_;
     const LabelEmitOperator& op_;
     bool is_t32_;
     bool is_branch_;
@@ -114,7 +117,7 @@ class Label {
         is_bound_(false),
         minus_zero_(false),
         is_t32_(false),
-        in_veneer_pool_(false),
+        veneer_pool_manager_(NULL),
         checkpoint_(kMaxOffset) {}
   explicit Label(Offset offset, uint32_t pc_offset, bool minus_zero = false)
       : imm_offset_(offset),
@@ -122,7 +125,7 @@ class Label {
         is_bound_(true),
         minus_zero_(minus_zero),
         is_t32_(false),
-        in_veneer_pool_(false),
+        veneer_pool_manager_(NULL),
         checkpoint_(kMaxOffset) {}
   ~Label() {}
   bool IsBound() const { return is_bound_; }
@@ -146,15 +149,20 @@ class Label {
     VIXL_ASSERT(IsBound());
     return minus_zero_;
   }
-  bool IsInVeneerPool() const { return in_veneer_pool_; }
-  void SetInVeneerPool() { in_veneer_pool_ = true; }
-  void ResetInVeneerPool() { in_veneer_pool_ = false; }
+  bool IsInVeneerPool() const { return veneer_pool_manager_ != NULL; }
+  VeneerPoolManager* GetVeneerPoolManager() const {
+    return veneer_pool_manager_;
+  }
+  void SetVeneerPoolManager(VeneerPoolManager* veneer_pool_manager) {
+    veneer_pool_manager_ = veneer_pool_manager;
+  }
+  void ClearVeneerPoolManager() { veneer_pool_manager_ = NULL; }
   void SetCheckpoint(Offset checkpoint) { checkpoint_ = checkpoint; }
   Offset GetCheckpoint() const { return checkpoint_; }
   Offset GetAlignedCheckpoint(int byte_align) const {
     return AlignDown(GetCheckpoint(), byte_align);
   }
-  void AddForwardRef(ptrdiff_t instr_location,
+  void AddForwardRef(int32_t instr_location,
                      bool isT32,
                      const LabelEmitOperator& op) {
     forward_.push_back(ForwardReference(instr_location, op, isT32));
@@ -162,6 +170,10 @@ class Label {
 
   ForwardRefList::iterator GetFirstForwardRef() { return forward_.begin(); }
   ForwardRefList::iterator GetEndForwardRef() { return forward_.end(); }
+  const ForwardReference* GetForwardRefBack() const {
+    if (forward_.empty()) return NULL;
+    return &forward_.back();
+  }
   // Erase an item in the list. We don't have to recompute the checkpoint as
   // the caller does it.
   ForwardRefList::iterator Erase(ForwardRefList::iterator ref) {
@@ -226,14 +238,39 @@ class Label {
   bool minus_zero_;
   // Is the label in T32 state.
   bool is_t32_;
-  // True if the label has been inserted in the veneer pool.
-  bool in_veneer_pool_;
+  // Not null if the label is currently inserted in the veneer pool.
+  VeneerPoolManager* veneer_pool_manager_;
   // Contains the references to the unbound label
   ForwardRefList forward_;
   // Max offset in the code buffer. Must be emitted before this checkpoint.
   Offset checkpoint_;
 };
 
+class VeneerPoolManager {
+ public:
+  explicit VeneerPoolManager(MacroAssembler* masm)
+      : masm_(masm), checkpoint_(Label::kMaxOffset) {}
+  bool IsEmpty() const { return checkpoint_ == Label::kMaxOffset; }
+  Label::Offset GetCheckpoint() const {
+    // Make room for a branch over the pools.
+    return checkpoint_ - kMaxInstructionSizeInBytes;
+  }
+  size_t GetMaxSize() const {
+    return labels_.size() * kMaxInstructionSizeInBytes;
+  }
+  void AddLabel(Label* label);
+  void RemoveLabel(Label* label);
+  void Emit(Label::Offset target);
+
+ private:
+  MacroAssembler* masm_;
+  // List of all unbound labels which are used by a branch instruction.
+  std::list<Label*> labels_;
+  // Max offset in the code buffer where the veneer needs to be emitted.
+  // A default value of Label::kMaxOffset means that the checkpoint is
+  // invalid.
+  Label::Offset checkpoint_;
+};
 
 }  // namespace aarch32
 }  // namespace vixl

@@ -24,6 +24,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <sys/mman.h>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -108,18 +109,22 @@ namespace aarch64 {
   SETUP_COMMON()
 
 #define SETUP_COMMON()                                                         \
-  masm.SetGenerateSimulatorCode(true);                                    \
-  Decoder decoder;                                                             \
-  Simulator* simulator = Test::run_debugger() ? new Debugger(&decoder)         \
-                                              : new Simulator(&decoder);       \
+  masm.SetGenerateSimulatorCode(true);                                         \
+  Decoder simulator_decoder;                                                   \
+  Simulator* simulator =                                                       \
+      Test::run_debugger() ? new Debugger(&simulator_decoder)                  \
+                           : new Simulator(&simulator_decoder);                \
   simulator->SetColouredTrace(Test::coloured_trace());                         \
   simulator->SetInstructionStats(Test::instruction_stats());                   \
+  Disassembler disasm;                                                         \
+  Decoder disassembler_decoder;                                                \
+  disassembler_decoder.AppendVisitor(&disasm);                                 \
   RegisterDump core
 
 // This is a convenience macro to avoid creating a scope for every assembler
 // function called. It will still assert the buffer hasn't been exceeded.
 #define ALLOW_ASM()                                                            \
-  CodeBufferCheckScope guard(&masm, masm.GetBufferCapacity())
+  CodeBufferCheckScope guard(&masm, masm.GetBuffer()->GetCapacity())
 
 #define START()                                                                \
   masm.Reset();                                                                \
@@ -149,7 +154,8 @@ namespace aarch64 {
   masm.FinalizeCode()
 
 #define RUN()                                                                  \
-  simulator->RunFrom(masm.GetStartAddress<Instruction*>())
+  DISASSEMBLE();                                                               \
+  simulator->RunFrom(masm.GetBuffer()->GetStartAddress<Instruction*>())
 
 #define RUN_CUSTOM() RUN()
 
@@ -169,12 +175,18 @@ namespace aarch64 {
   SETUP_COMMON()
 
 #define SETUP_CUSTOM(size, pic)                                                \
-  ExecutableMemory code(size + CodeBuffer::kDefaultCapacity);                  \
-  MacroAssembler masm(code.GetBuffer(),                                        \
-                      code.GetSize() + CodeBuffer::kDefaultCapacity, pic);     \
+  byte *buffer = reinterpret_cast<byte*>(                                      \
+      mmap(NULL, size + CodeBuffer::kDefaultCapacity,                          \
+           PROT_READ | PROT_WRITE,                                             \
+           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));                               \
+  size_t buffer_size = size + CodeBuffer::kDefaultCapacity;                    \
+  MacroAssembler masm(buffer, buffer_size, pic);                               \
   SETUP_COMMON()
 
 #define SETUP_COMMON()                                                         \
+  Disassembler disasm;                                                         \
+  Decoder disassembler_decoder;                                                \
+  disassembler_decoder.AppendVisitor(&disasm);                                 \
   masm.SetGenerateSimulatorCode(false);                                        \
   RegisterDump core;                                                           \
   CPU::SetUp()
@@ -182,7 +194,7 @@ namespace aarch64 {
 // This is a convenience macro to avoid creating a scope for every assembler
 // function called. It will still assert the buffer hasn't been exceeded.
 #define ALLOW_ASM()                                                            \
-  CodeBufferCheckScope guard(&masm, masm.GetBufferCapacity())
+  CodeBufferCheckScope guard(&masm, masm.GetBuffer()->GetCapacity())
 
 #define START()                                                                \
   masm.Reset();                                                                \
@@ -194,18 +206,20 @@ namespace aarch64 {
   __ Ret();                                                                    \
   masm.FinalizeCode()
 
-// Copy the generated code into a memory area garanteed to be executable before
-// executing it.
+// Execute the generated code from the memory area.
 #define RUN()                                                                  \
-  {                                                                            \
-    ExecutableMemory code(masm.GetCursorOffset());                             \
-    code.Write(masm.GetOffsetAddress<byte*>(0), masm.GetCursorOffset());       \
-    code.Execute();                                                            \
-  }
+  DISASSEMBLE();                                                               \
+  masm.GetBuffer()->SetExecutable();                                           \
+    ExecuteMemory(masm.GetBuffer()->GetStartAddress<byte*>(),                  \
+                  masm.GetSizeOfCodeGenerated());                              \
+  masm.GetBuffer()->SetWritable()
 
-// The generated code was written directly into `code`, execute it directly.
+// The generated code was written directly into `buffer`, execute it directly.
 #define RUN_CUSTOM()                                                           \
-  code.Execute()
+  DISASSEMBLE();                                                               \
+  mprotect(buffer, buffer_size, PROT_READ | PROT_EXEC);                        \
+  ExecuteMemory(buffer, buffer_size);                                          \
+  mprotect(buffer, buffer_size, PROT_READ | PROT_WRITE)
 
 #define TEARDOWN()
 
@@ -213,29 +227,43 @@ namespace aarch64 {
 
 #endif  // ifdef VIXL_INCLUDE_SIMULATOR_AARCH64.
 
+#define DISASSEMBLE() \
+  if (Test::disassemble()) {                                                   \
+    Instruction* instruction =                                                 \
+        masm.GetBuffer()->GetStartAddress<Instruction*>();                     \
+    Instruction* end = masm.GetBuffer()->GetOffsetAddress<Instruction*>(       \
+        masm.GetSizeOfCodeGenerated());                                        \
+    while (instruction != end) {                                               \
+      disassembler_decoder.Decode(instruction);                                \
+      uint32_t encoding = *reinterpret_cast<uint32_t*>(instruction);           \
+      printf("%08" PRIx32 "\t%s\n", encoding, disasm.GetOutput());             \
+      instruction += kInstructionSize;                                         \
+    }                                                                          \
+  }
+
 #define ASSERT_EQUAL_NZCV(expected)                                            \
-  assert(EqualNzcv(expected, core.flags_nzcv()))
+  VIXL_CHECK(EqualNzcv(expected, core.flags_nzcv()))
 
 #define ASSERT_EQUAL_REGISTERS(expected)                                       \
-  assert(EqualRegisters(&expected, &core))
+  VIXL_CHECK(EqualRegisters(&expected, &core))
 
 #define ASSERT_EQUAL_32(expected, result)                                      \
-  assert(Equal32(static_cast<uint32_t>(expected), &core, result))
+  VIXL_CHECK(Equal32(static_cast<uint32_t>(expected), &core, result))
 
 #define ASSERT_EQUAL_FP32(expected, result)                                    \
-  assert(EqualFP32(expected, &core, result))
+  VIXL_CHECK(EqualFP32(expected, &core, result))
 
 #define ASSERT_EQUAL_64(expected, result)                                      \
-  assert(Equal64(expected, &core, result))
+  VIXL_CHECK(Equal64(expected, &core, result))
 
 #define ASSERT_EQUAL_FP64(expected, result)                                    \
-  assert(EqualFP64(expected, &core, result))
+  VIXL_CHECK(EqualFP64(expected, &core, result))
 
 #define ASSERT_EQUAL_128(expected_h, expected_l, result)                       \
-  assert(Equal128(expected_h, expected_l, &core, result))
+  VIXL_CHECK(Equal128(expected_h, expected_l, &core, result))
 
 #define ASSERT_LITERAL_POOL_SIZE(expected)                                     \
-  assert((expected + kInstructionSize) == (masm.GetLiteralPoolSize()))
+  VIXL_CHECK((expected + kInstructionSize) == (masm.GetLiteralPoolSize()))
 
 
 TEST(stack_ops) {
@@ -512,6 +540,56 @@ TEST(mov) {
   ASSERT_EQUAL_64(0x000000000000fff0, x26);
   ASSERT_EQUAL_64(0x000000000001ffe0, x27);
   ASSERT_EQUAL_64(0x0123456789abcdef, x28);
+
+  TEARDOWN();
+}
+
+
+TEST(mov_negative) {
+  SETUP();
+
+  START();
+  __ Mov(w11, 0xffffffff);
+  __ Mov(x12, 0xffffffffffffffff);
+
+  __ Mov(w13, Operand(w11, LSL, 1));
+  __ Mov(w14, Operand(w11, LSR, 1));
+  __ Mov(w15, Operand(w11, ASR, 1));
+  __ Mov(w18, Operand(w11, ROR, 1));
+  __ Mov(w19, Operand(w11, UXTB, 1));
+  __ Mov(w20, Operand(w11, SXTB, 1));
+  __ Mov(w21, Operand(w11, UXTH, 1));
+  __ Mov(w22, Operand(w11, SXTH, 1));
+
+  __ Mov(x23, Operand(x12, LSL, 1));
+  __ Mov(x24, Operand(x12, LSR, 1));
+  __ Mov(x25, Operand(x12, ASR, 1));
+  __ Mov(x26, Operand(x12, ROR, 1));
+  __ Mov(x27, Operand(x12, UXTH, 1));
+  __ Mov(x28, Operand(x12, SXTH, 1));
+  __ Mov(x29, Operand(x12, UXTW, 1));
+  __ Mov(x30, Operand(x12, SXTW, 1));
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_64(0xfffffffe, x13);
+  ASSERT_EQUAL_64(0x7fffffff, x14);
+  ASSERT_EQUAL_64(0xffffffff, x15);
+  ASSERT_EQUAL_64(0xffffffff, x18);
+  ASSERT_EQUAL_64(0x000001fe, x19);
+  ASSERT_EQUAL_64(0xfffffffe, x20);
+  ASSERT_EQUAL_64(0x0001fffe, x21);
+  ASSERT_EQUAL_64(0xfffffffe, x22);
+
+  ASSERT_EQUAL_64(0xfffffffffffffffe, x23);
+  ASSERT_EQUAL_64(0x7fffffffffffffff, x24);
+  ASSERT_EQUAL_64(0xffffffffffffffff, x25);
+  ASSERT_EQUAL_64(0xffffffffffffffff, x26);
+  ASSERT_EQUAL_64(0x000000000001fffe, x27);
+  ASSERT_EQUAL_64(0xfffffffffffffffe, x28);
+  ASSERT_EQUAL_64(0x00000001fffffffe, x29);
+  ASSERT_EQUAL_64(0xfffffffffffffffe, x30);
 
   TEARDOWN();
 }
@@ -1746,9 +1824,9 @@ TEST(adrp) {
 
   // Waste space until the start of a page.
   {
-    InstructionAccurateScope scope(&masm,
-                                   kPageSize / kInstructionSize,
-                                   InstructionAccurateScope::kMaximumSize);
+    ExactAssemblyScope scope(&masm,
+                             kPageSize,
+                             ExactAssemblyScope::kMaximumSize);
     const uintptr_t kPageOffsetMask = kPageSize - 1;
     while ((masm.GetCursorAddress<uintptr_t>() & kPageOffsetMask) != 0) {
       __ b(&start);
@@ -1820,9 +1898,9 @@ static void AdrpPageBoundaryHelper(unsigned offset_into_page) {
   Label start;
 
   {
-    InstructionAccurateScope scope(&masm,
-                                   kMaxCodeSize / kInstructionSize,
-                                   InstructionAccurateScope::kMaximumSize);
+    ExactAssemblyScope scope(&masm,
+                             kMaxCodeSize,
+                             ExactAssemblyScope::kMaximumSize);
     // Initialize NZCV with `eq` flags.
     __ cmp(wzr, wzr);
     // Waste space until the start of a page.
@@ -1833,7 +1911,7 @@ static void AdrpPageBoundaryHelper(unsigned offset_into_page) {
     // The first page.
     VIXL_STATIC_ASSERT(kStartPage < 0);
     {
-      InstructionAccurateScope scope_page(&masm, kPageSize / kInstructionSize);
+      ExactAssemblyScope scope_page(&masm, kPageSize);
       __ bind(&start);
       __ adrp(x0, &test);
       __ adrp(x1, &test);
@@ -1846,7 +1924,7 @@ static void AdrpPageBoundaryHelper(unsigned offset_into_page) {
     // Subsequent pages.
     VIXL_STATIC_ASSERT(kEndPage >= 0);
     for (int page = (kStartPage + 1); page <= kEndPage; page++) {
-      InstructionAccurateScope scope_page(&masm, kPageSize / kInstructionSize);
+      ExactAssemblyScope scope_page(&masm, kPageSize);
       if (page == 0) {
         for (size_t i = 0; i < (kPageSize / kInstructionSize);) {
           if (i++ == (offset_into_page / kInstructionSize)) __ bind(&test);
@@ -1900,9 +1978,9 @@ static void AdrpOffsetHelper(int64_t offset) {
   Label page;
 
   {
-    InstructionAccurateScope scope(&masm,
-                                   kMaxCodeSize / kInstructionSize,
-                                   InstructionAccurateScope::kMaximumSize);
+    ExactAssemblyScope scope(&masm,
+                             kMaxCodeSize,
+                             ExactAssemblyScope::kMaximumSize);
     // Initialize NZCV with `eq` flags.
     __ cmp(wzr, wzr);
     // Waste space until the start of a page.
@@ -1912,14 +1990,13 @@ static void AdrpOffsetHelper(int64_t offset) {
     __ bind(&page);
 
     {
-      int imm21 = static_cast<int>(offset);
-      InstructionAccurateScope scope_page(&masm, kPageSize / kInstructionSize);
+      ExactAssemblyScope scope_page(&masm, kPageSize);
       // Every adrp instruction on this page should return the same value.
-      __ adrp(x0, imm21);
-      __ adrp(x1, imm21);
+      __ adrp(x0, offset);
+      __ adrp(x1, offset);
       for (size_t i = 2; i < kPageSize / kInstructionSize; i += 2) {
         __ ccmp(x0, x1, NoFlag, eq);
-        __ adrp(x1, imm21);
+        __ adrp(x1, offset);
       }
     }
   }
@@ -5965,6 +6042,212 @@ TEST(neon_st4_q_postindex) {
 }
 
 
+TEST(neon_destructive_minmaxp) {
+  SETUP();
+
+  START();
+  __ Movi(v0.V2D(), 0, 0x2222222233333333);
+  __ Movi(v1.V2D(), 0, 0x0000000011111111);
+
+  __ Sminp(v16.V2S(), v0.V2S(), v1.V2S());
+  __ Mov(v17, v0);
+  __ Sminp(v17.V2S(), v17.V2S(), v1.V2S());
+  __ Mov(v18, v1);
+  __ Sminp(v18.V2S(), v0.V2S(), v18.V2S());
+  __ Mov(v19, v0);
+  __ Sminp(v19.V2S(), v19.V2S(), v19.V2S());
+
+  __ Smaxp(v20.V2S(), v0.V2S(), v1.V2S());
+  __ Mov(v21, v0);
+  __ Smaxp(v21.V2S(), v21.V2S(), v1.V2S());
+  __ Mov(v22, v1);
+  __ Smaxp(v22.V2S(), v0.V2S(), v22.V2S());
+  __ Mov(v23, v0);
+  __ Smaxp(v23.V2S(), v23.V2S(), v23.V2S());
+
+  __ Uminp(v24.V2S(), v0.V2S(), v1.V2S());
+  __ Mov(v25, v0);
+  __ Uminp(v25.V2S(), v25.V2S(), v1.V2S());
+  __ Mov(v26, v1);
+  __ Uminp(v26.V2S(), v0.V2S(), v26.V2S());
+  __ Mov(v27, v0);
+  __ Uminp(v27.V2S(), v27.V2S(), v27.V2S());
+
+  __ Umaxp(v28.V2S(), v0.V2S(), v1.V2S());
+  __ Mov(v29, v0);
+  __ Umaxp(v29.V2S(), v29.V2S(), v1.V2S());
+  __ Mov(v30, v1);
+  __ Umaxp(v30.V2S(), v0.V2S(), v30.V2S());
+  __ Mov(v31, v0);
+  __ Umaxp(v31.V2S(), v31.V2S(), v31.V2S());
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_128(0, 0x0000000022222222, q16);
+  ASSERT_EQUAL_128(0, 0x0000000022222222, q17);
+  ASSERT_EQUAL_128(0, 0x0000000022222222, q18);
+  ASSERT_EQUAL_128(0, 0x2222222222222222, q19);
+
+  ASSERT_EQUAL_128(0, 0x1111111133333333, q20);
+  ASSERT_EQUAL_128(0, 0x1111111133333333, q21);
+  ASSERT_EQUAL_128(0, 0x1111111133333333, q22);
+  ASSERT_EQUAL_128(0, 0x3333333333333333, q23);
+
+  ASSERT_EQUAL_128(0, 0x0000000022222222, q24);
+  ASSERT_EQUAL_128(0, 0x0000000022222222, q25);
+  ASSERT_EQUAL_128(0, 0x0000000022222222, q26);
+  ASSERT_EQUAL_128(0, 0x2222222222222222, q27);
+
+  ASSERT_EQUAL_128(0, 0x1111111133333333, q28);
+  ASSERT_EQUAL_128(0, 0x1111111133333333, q29);
+  ASSERT_EQUAL_128(0, 0x1111111133333333, q30);
+  ASSERT_EQUAL_128(0, 0x3333333333333333, q31);
+
+  TEARDOWN();
+}
+
+
+TEST(neon_destructive_tbl) {
+  SETUP();
+
+  START();
+  __ Movi(v0.V2D(), 0x0041424334353627, 0x28291a1b1c0d0e0f);
+  __ Movi(v1.V2D(), 0xafaeadacabaaa9a8, 0xa7a6a5a4a3a2a1a0);
+  __ Movi(v2.V2D(), 0xbfbebdbcbbbab9b8, 0xb7b6b5b4b3b2b1b0);
+  __ Movi(v3.V2D(), 0xcfcecdcccbcac9c8, 0xc7c6c5c4c3c2c1c0);
+  __ Movi(v4.V2D(), 0xdfdedddcdbdad9d8, 0xd7d6d5d4d3d2d1d0);
+
+  __ Movi(v16.V2D(), 0x5555555555555555, 0x5555555555555555);
+  __ Tbl(v16.V16B(), v1.V16B(), v0.V16B());
+  __ Mov(v17, v0);
+  __ Tbl(v17.V16B(), v1.V16B(), v17.V16B());
+  __ Mov(v18, v1);
+  __ Tbl(v18.V16B(), v18.V16B(), v0.V16B());
+  __ Mov(v19, v0);
+  __ Tbl(v19.V16B(), v19.V16B(), v19.V16B());
+
+  __ Movi(v20.V2D(), 0x5555555555555555, 0x5555555555555555);
+  __ Tbl(v20.V16B(), v1.V16B(), v2.V16B(), v3.V16B(), v4.V16B(), v0.V16B());
+  __ Mov(v21, v0);
+  __ Tbl(v21.V16B(), v1.V16B(), v2.V16B(), v3.V16B(), v4.V16B(), v21.V16B());
+  __ Mov(v22, v1);
+  __ Mov(v23, v2);
+  __ Mov(v24, v3);
+  __ Mov(v25, v4);
+  __ Tbl(v22.V16B(), v22.V16B(), v23.V16B(), v24.V16B(), v25.V16B(), v0.V16B());
+  __ Mov(v26, v0);
+  __ Mov(v27, v1);
+  __ Mov(v28, v2);
+  __ Mov(v29, v3);
+  __ Tbl(v26.V16B(), v26.V16B(), v27.V16B(), v28.V16B(), v29.V16B(), v26.V16B());
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_128(0xa000000000000000, 0x0000000000adaeaf, q16);
+  ASSERT_EQUAL_128(0xa000000000000000, 0x0000000000adaeaf, q17);
+  ASSERT_EQUAL_128(0xa000000000000000, 0x0000000000adaeaf, q18);
+  ASSERT_EQUAL_128(0x0f00000000000000, 0x0000000000424100, q19);
+
+  ASSERT_EQUAL_128(0xa0000000d4d5d6c7, 0xc8c9babbbcadaeaf, q20);
+  ASSERT_EQUAL_128(0xa0000000d4d5d6c7, 0xc8c9babbbcadaeaf, q21);
+  ASSERT_EQUAL_128(0xa0000000d4d5d6c7, 0xc8c9babbbcadaeaf, q22);
+  ASSERT_EQUAL_128(0x0f000000c4c5c6b7, 0xb8b9aaabac424100, q26);
+
+  TEARDOWN();
+}
+
+
+TEST(neon_destructive_tbx) {
+  SETUP();
+
+  START();
+  __ Movi(v0.V2D(), 0x0041424334353627, 0x28291a1b1c0d0e0f);
+  __ Movi(v1.V2D(), 0xafaeadacabaaa9a8, 0xa7a6a5a4a3a2a1a0);
+  __ Movi(v2.V2D(), 0xbfbebdbcbbbab9b8, 0xb7b6b5b4b3b2b1b0);
+  __ Movi(v3.V2D(), 0xcfcecdcccbcac9c8, 0xc7c6c5c4c3c2c1c0);
+  __ Movi(v4.V2D(), 0xdfdedddcdbdad9d8, 0xd7d6d5d4d3d2d1d0);
+
+  __ Movi(v16.V2D(), 0x5555555555555555, 0x5555555555555555);
+  __ Tbx(v16.V16B(), v1.V16B(), v0.V16B());
+  __ Mov(v17, v0);
+  __ Tbx(v17.V16B(), v1.V16B(), v17.V16B());
+  __ Mov(v18, v1);
+  __ Tbx(v18.V16B(), v18.V16B(), v0.V16B());
+  __ Mov(v19, v0);
+  __ Tbx(v19.V16B(), v19.V16B(), v19.V16B());
+
+  __ Movi(v20.V2D(), 0x5555555555555555, 0x5555555555555555);
+  __ Tbx(v20.V16B(), v1.V16B(), v2.V16B(), v3.V16B(), v4.V16B(), v0.V16B());
+  __ Mov(v21, v0);
+  __ Tbx(v21.V16B(), v1.V16B(), v2.V16B(), v3.V16B(), v4.V16B(), v21.V16B());
+  __ Mov(v22, v1);
+  __ Mov(v23, v2);
+  __ Mov(v24, v3);
+  __ Mov(v25, v4);
+  __ Tbx(v22.V16B(), v22.V16B(), v23.V16B(), v24.V16B(), v25.V16B(), v0.V16B());
+  __ Mov(v26, v0);
+  __ Mov(v27, v1);
+  __ Mov(v28, v2);
+  __ Mov(v29, v3);
+  __ Tbx(v26.V16B(), v26.V16B(), v27.V16B(), v28.V16B(), v29.V16B(), v26.V16B());
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_128(0xa055555555555555, 0x5555555555adaeaf, q16);
+  ASSERT_EQUAL_128(0xa041424334353627, 0x28291a1b1cadaeaf, q17);
+  ASSERT_EQUAL_128(0xa0aeadacabaaa9a8, 0xa7a6a5a4a3adaeaf, q18);
+  ASSERT_EQUAL_128(0x0f41424334353627, 0x28291a1b1c424100, q19);
+
+  ASSERT_EQUAL_128(0xa0555555d4d5d6c7, 0xc8c9babbbcadaeaf, q20);
+  ASSERT_EQUAL_128(0xa0414243d4d5d6c7, 0xc8c9babbbcadaeaf, q21);
+  ASSERT_EQUAL_128(0xa0aeadacd4d5d6c7, 0xc8c9babbbcadaeaf, q22);
+  ASSERT_EQUAL_128(0x0f414243c4c5c6b7, 0xb8b9aaabac424100, q26);
+
+  TEARDOWN();
+}
+
+
+TEST(neon_destructive_fcvtl) {
+  SETUP();
+
+  START();
+  __ Movi(v0.V2D(), 0x400000003f800000, 0xbf800000c0000000);
+  __ Fcvtl(v16.V2D(), v0.V2S());
+  __ Fcvtl2(v17.V2D(), v0.V4S());
+  __ Mov(v18, v0);
+  __ Mov(v19, v0);
+  __ Fcvtl(v18.V2D(), v18.V2S());
+  __ Fcvtl2(v19.V2D(), v19.V4S());
+
+  __ Movi(v1.V2D(), 0x40003c003c004000, 0xc000bc00bc00c000);
+  __ Fcvtl(v20.V4S(), v1.V4H());
+  __ Fcvtl2(v21.V4S(), v1.V8H());
+  __ Mov(v22, v1);
+  __ Mov(v23, v1);
+  __ Fcvtl(v22.V4S(), v22.V4H());
+  __ Fcvtl2(v23.V4S(), v23.V8H());
+
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_128(0xbff0000000000000, 0xc000000000000000, q16);
+  ASSERT_EQUAL_128(0x4000000000000000, 0x3ff0000000000000, q17);
+  ASSERT_EQUAL_128(0xbff0000000000000, 0xc000000000000000, q18);
+  ASSERT_EQUAL_128(0x4000000000000000, 0x3ff0000000000000, q19);
+
+  ASSERT_EQUAL_128(0xc0000000bf800000, 0xbf800000c0000000, q20);
+  ASSERT_EQUAL_128(0x400000003f800000, 0x3f80000040000000, q21);
+  ASSERT_EQUAL_128(0xc0000000bf800000, 0xbf800000c0000000, q22);
+  ASSERT_EQUAL_128(0x400000003f800000, 0x3f80000040000000, q23);
+
+  TEARDOWN();
+}
+
+
 TEST(ldp_stp_float) {
   SETUP();
 
@@ -7141,7 +7424,7 @@ TEST(prfm_literal_imm19) {
     PrefetchOperation op = static_cast<PrefetchOperation>(i);
 
     // The address used in prfm doesn't have to be valid.
-    __ prfm(op, 0);
+    __ prfm(op, INT64_C(0));
     __ prfm(op, 1);
     __ prfm(op, -1);
     __ prfm(op, 1000);
@@ -12753,26 +13036,26 @@ TEST(register_bit) {
   // teardown.
 
   // Simple tests.
-  assert(x0.GetBit() == (UINT64_C(1) << 0));
-  assert(x1.GetBit() == (UINT64_C(1) << 1));
-  assert(x10.GetBit() == (UINT64_C(1) << 10));
+  VIXL_CHECK(x0.GetBit() == (UINT64_C(1) << 0));
+  VIXL_CHECK(x1.GetBit() == (UINT64_C(1) << 1));
+  VIXL_CHECK(x10.GetBit() == (UINT64_C(1) << 10));
 
   // AAPCS64 definitions.
-  assert(lr.GetBit() == (UINT64_C(1) << kLinkRegCode));
+  VIXL_CHECK(lr.GetBit() == (UINT64_C(1) << kLinkRegCode));
 
   // Fixed (hardware) definitions.
-  assert(xzr.GetBit() == (UINT64_C(1) << kZeroRegCode));
+  VIXL_CHECK(xzr.GetBit() == (UINT64_C(1) << kZeroRegCode));
 
   // Internal ABI definitions.
-  assert(sp.GetBit() == (UINT64_C(1) << kSPRegInternalCode));
-  assert(sp.GetBit() != xzr.GetBit());
+  VIXL_CHECK(sp.GetBit() == (UINT64_C(1) << kSPRegInternalCode));
+  VIXL_CHECK(sp.GetBit() != xzr.GetBit());
 
   // xn.GetBit() == wn.GetBit() at all times, for the same n.
-  assert(x0.GetBit() == w0.GetBit());
-  assert(x1.GetBit() == w1.GetBit());
-  assert(x10.GetBit() == w10.GetBit());
-  assert(xzr.GetBit() == wzr.GetBit());
-  assert(sp.GetBit() == wsp.GetBit());
+  VIXL_CHECK(x0.GetBit() == w0.GetBit());
+  VIXL_CHECK(x1.GetBit() == w1.GetBit());
+  VIXL_CHECK(x10.GetBit() == w10.GetBit());
+  VIXL_CHECK(xzr.GetBit() == wzr.GetBit());
+  VIXL_CHECK(sp.GetBit() == wsp.GetBit());
 }
 
 
@@ -12783,13 +13066,13 @@ TEST(stack_pointer_override) {
   START();
 
   // The default stack pointer in VIXL is sp.
-  assert(sp.Is(__ StackPointer()));
+  VIXL_CHECK(sp.Is(__ StackPointer()));
   __ SetStackPointer(x0);
-  assert(x0.Is(__ StackPointer()));
+  VIXL_CHECK(x0.Is(__ StackPointer()));
   __ SetStackPointer(x28);
-  assert(x28.Is(__ StackPointer()));
+  VIXL_CHECK(x28.Is(__ StackPointer()));
   __ SetStackPointer(sp);
-  assert(sp.Is(__ StackPointer()));
+  VIXL_CHECK(sp.Is(__ StackPointer()));
 
   END();
   RUN();
@@ -14151,6 +14434,58 @@ TEST(isvalid) {
 }
 
 
+TEST(areconsecutive) {
+  // This test generates no code; it just checks that AreConsecutive works.
+  VIXL_CHECK(AreConsecutive(b0, NoVReg));
+  VIXL_CHECK(AreConsecutive(b1, b2));
+  VIXL_CHECK(AreConsecutive(b3, b4, b5));
+  VIXL_CHECK(AreConsecutive(b6, b7, b8, b9));
+  VIXL_CHECK(AreConsecutive(h10, NoVReg));
+  VIXL_CHECK(AreConsecutive(h11, h12));
+  VIXL_CHECK(AreConsecutive(h13, h14, h15));
+  VIXL_CHECK(AreConsecutive(h16, h17, h18, h19));
+  VIXL_CHECK(AreConsecutive(s20, NoVReg));
+  VIXL_CHECK(AreConsecutive(s21, s22));
+  VIXL_CHECK(AreConsecutive(s23, s24, s25));
+  VIXL_CHECK(AreConsecutive(s26, s27, s28, s29));
+  VIXL_CHECK(AreConsecutive(d30, NoVReg));
+  VIXL_CHECK(AreConsecutive(d31, d0));
+  VIXL_CHECK(AreConsecutive(d1, d2, d3));
+  VIXL_CHECK(AreConsecutive(d4, d5, d6, d7));
+  VIXL_CHECK(AreConsecutive(q8, NoVReg));
+  VIXL_CHECK(AreConsecutive(q9, q10));
+  VIXL_CHECK(AreConsecutive(q11, q12, q13));
+  VIXL_CHECK(AreConsecutive(q14, q15, q16, q17));
+  VIXL_CHECK(AreConsecutive(v18, NoVReg));
+  VIXL_CHECK(AreConsecutive(v19, v20));
+  VIXL_CHECK(AreConsecutive(v21, v22, v23));
+  VIXL_CHECK(AreConsecutive(v24, v25, v26, v27));
+  VIXL_CHECK(AreConsecutive(b29, h30));
+  VIXL_CHECK(AreConsecutive(s31, d0, q1));
+  VIXL_CHECK(AreConsecutive(v2, b3, h4, s5));
+
+  VIXL_CHECK(!AreConsecutive(b0, b2));
+  VIXL_CHECK(!AreConsecutive(h1, h0));
+  VIXL_CHECK(!AreConsecutive(s31, s1));
+  VIXL_CHECK(!AreConsecutive(d12, d12));
+  VIXL_CHECK(!AreConsecutive(q31, q1));
+
+  VIXL_CHECK(!AreConsecutive(b0, b1, b3));
+  VIXL_CHECK(!AreConsecutive(h4, h5, h6, h6));
+  VIXL_CHECK(!AreConsecutive(d11, d13, NoVReg, d14));
+  VIXL_CHECK(!AreConsecutive(d15, d16, d18, NoVReg));
+  VIXL_CHECK(!AreConsecutive(b26, b28, NoVReg, b29));
+  VIXL_CHECK(!AreConsecutive(s28, s30, NoVReg, NoVReg));
+
+  VIXL_CHECK(AreConsecutive(q19, NoVReg, NoVReg, q22));
+  VIXL_CHECK(AreConsecutive(v23, NoVReg, v25, NoVReg));
+  VIXL_CHECK(AreConsecutive(b26, b27, NoVReg, NoVReg));
+  VIXL_CHECK(AreConsecutive(h28, NoVReg, NoVReg, NoVReg));
+  VIXL_CHECK(AreConsecutive(s30, s31, NoVReg, s2));
+  VIXL_CHECK(AreConsecutive(d3, NoVReg, d6, d7));
+}
+
+
 TEST(printf) {
   SETUP();
   START();
@@ -14404,71 +14739,6 @@ TEST(log) {
   TEARDOWN();
 }
 #endif
-
-
-TEST(instruction_accurate_scope) {
-  SETUP();
-  START();
-
-  // By default macro instructions are allowed.
-  VIXL_ASSERT(masm.AllowMacroInstructions());
-  {
-    InstructionAccurateScope scope1(&masm, 2);
-    VIXL_ASSERT(!masm.AllowMacroInstructions());
-    __ nop();
-    {
-      InstructionAccurateScope scope2(&masm, 1);
-      VIXL_ASSERT(!masm.AllowMacroInstructions());
-      __ nop();
-    }
-    VIXL_ASSERT(!masm.AllowMacroInstructions());
-  }
-  VIXL_ASSERT(masm.AllowMacroInstructions());
-
-  {
-    InstructionAccurateScope scope(&masm, 2);
-    __ add(x0, x0, x0);
-    __ sub(x0, x0, x0);
-  }
-
-  END();
-  RUN();
-  TEARDOWN();
-}
-
-
-TEST(instruction_accurate_scope_with_pools) {
-  SETUP();
-  START();
-
-  ASSERT_LITERAL_POOL_SIZE(0);
-
-  __ Ldr(x10, 0x1234567890abcdef);
-
-  ASSERT_LITERAL_POOL_SIZE(8);
-
-  const int64_t n_instructions = kMaxLoadLiteralRange / kInstructionSize;
-  {
-    // The literal pool should be generated at this point, as otherwise the
-    // `Ldr` will run out of range when we generate the `nop` instructions
-    // below.
-    InstructionAccurateScope scope(&masm, n_instructions);
-
-    // Although it must be, we do not check that the literal pool size is zero
-    // here, because we want this regression test to fail while or after we
-    // generate the nops.
-
-    for (int64_t i = 0; i < n_instructions; ++i) {
-      __ nop();
-    }
-  }
-
-  ASSERT_LITERAL_POOL_SIZE(0);
-
-  END();
-  RUN();
-  TEARDOWN();
-}
 
 
 TEST(blr_lr) {
@@ -20853,6 +21123,12 @@ TEST(neon_fmulx_scalar) {
 }
 
 
+// We currently disable tests for CRC32 instructions when running natively.
+// Support for this family of instruction is optional, and so native platforms
+// may simply fail to execute the test.
+// TODO: Run the test on native platforms where the CRC32 instructions are
+// available.
+#ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 TEST(crc32b) {
   SETUP();
   START();
@@ -21167,6 +21443,7 @@ TEST(crc32cx) {
 
   TEARDOWN();
 }
+#endif  // VIXL_INCLUDE_SIMULATOR_AARCH64
 
 
 TEST(neon_fabd_scalar) {
@@ -21926,7 +22203,7 @@ TEST(ldr_literal_explicit) {
   {
     CodeBufferCheckScope scope(&masm,
                                kInstructionSize + sizeof(int64_t),
-                               CodeBufferCheckScope::kCheck,
+                               CodeBufferCheckScope::kReserveBufferSpace,
                                CodeBufferCheckScope::kExactSize);
     Label over_literal;
     __ b(&over_literal);
