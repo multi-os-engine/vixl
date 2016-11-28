@@ -34,11 +34,11 @@
 #include <climits>
 #include <vector>
 
-#include "globals-vixl.h"
-#include "utils-vixl.h"
+#include "../globals-vixl.h"
+#include "../utils-vixl.h"
 
-#include "aarch64/constants-aarch64.h"
-#include "aarch64/simulator-aarch64.h"
+#include "constants-aarch64.h"
+#include "simulator-aarch64.h"
 
 namespace vixl {
 namespace aarch64 {
@@ -53,8 +53,8 @@ class Debugger : public Simulator {
   explicit Debugger(Decoder* decoder, FILE* stream = stdout);
   ~Debugger();
 
-  virtual void Run();
-  virtual void VisitException(const Instruction* instr);
+  virtual void Run() VIXL_OVERRIDE;
+  virtual void VisitException(const Instruction* instr) VIXL_OVERRIDE;
 
   bool IsDebuggerActive() const { return debugger_active_; }
   void ActivateDebugger() { debugger_active_ = true; }

@@ -28,7 +28,7 @@
 
 #include <cmath>
 
-#include "aarch64/simulator-aarch64.h"
+#include "simulator-aarch64.h"
 
 namespace vixl {
 namespace aarch64 {
@@ -86,8 +86,9 @@ static inline float16 FPRoundToFloat16(int64_t sign,
 double Simulator::FixedToDouble(int64_t src, int fbits, FPRounding round) {
   if (src >= 0) {
     return UFixedToDouble(src, fbits, round);
+  } else if (src == INT64_MIN) {
+    return -UFixedToDouble(src, fbits, round);
   } else {
-    // This works for all negative values, including INT64_MIN.
     return -UFixedToDouble(-src, fbits, round);
   }
 }
@@ -112,8 +113,9 @@ double Simulator::UFixedToDouble(uint64_t src, int fbits, FPRounding round) {
 float Simulator::FixedToFloat(int64_t src, int fbits, FPRounding round) {
   if (src >= 0) {
     return UFixedToFloat(src, fbits, round);
+  } else if (src == INT64_MIN) {
+    return -UFixedToFloat(src, fbits, round);
   } else {
-    // This works for all negative values, including INT64_MIN.
     return -UFixedToFloat(-src, fbits, round);
   }
 }
@@ -778,8 +780,8 @@ LogicVRegister Simulator::add(VectorFormat vform,
                               LogicVRegister dst,
                               const LogicVRegister& src1,
                               const LogicVRegister& src2) {
+  int lane_size = LaneSizeInBitsFromFormat(vform);
   dst.ClearForWrite(vform);
-  // TODO(all): consider assigning the result of LaneCountFromFormat to a local.
   for (int i = 0; i < LaneCountFromFormat(vform); i++) {
     // Test for unsigned saturation.
     uint64_t ua = src1.UintLeftJustified(vform, i);
@@ -790,16 +792,16 @@ LogicVRegister Simulator::add(VectorFormat vform,
     }
 
     // Test for signed saturation.
-    int64_t sa = src1.IntLeftJustified(vform, i);
-    int64_t sb = src2.IntLeftJustified(vform, i);
-    int64_t sr = sa + sb;
+    bool pos_a = (ua >> 63) == 0;
+    bool pos_b = (ub >> 63) == 0;
+    bool pos_r = (ur >> 63) == 0;
     // If the signs of the operands are the same, but different from the result,
     // there was an overflow.
-    if (((sa >= 0) == (sb >= 0)) && ((sa >= 0) != (sr >= 0))) {
-      dst.SetSignedSat(i, sa >= 0);
+    if ((pos_a == pos_b) && (pos_a != pos_r)) {
+      dst.SetSignedSat(i, pos_a);
     }
 
-    dst.SetInt(vform, i, src1.Int(vform, i) + src2.Int(vform, i));
+    dst.SetInt(vform, i, ur >> (64 - lane_size));
   }
   return dst;
 }
@@ -1185,24 +1187,28 @@ LogicVRegister Simulator::sub(VectorFormat vform,
                               LogicVRegister dst,
                               const LogicVRegister& src1,
                               const LogicVRegister& src2) {
+  int lane_size = LaneSizeInBitsFromFormat(vform);
   dst.ClearForWrite(vform);
   for (int i = 0; i < LaneCountFromFormat(vform); i++) {
     // Test for unsigned saturation.
-    if (src2.Uint(vform, i) > src1.Uint(vform, i)) {
+    uint64_t ua = src1.UintLeftJustified(vform, i);
+    uint64_t ub = src2.UintLeftJustified(vform, i);
+    uint64_t ur = ua - ub;
+    if (ub > ua) {
       dst.SetUnsignedSat(i, false);
     }
 
     // Test for signed saturation.
-    int64_t sa = src1.IntLeftJustified(vform, i);
-    int64_t sb = src2.IntLeftJustified(vform, i);
-    int64_t sr = sa - sb;
+    bool pos_a = (ua >> 63) == 0;
+    bool pos_b = (ub >> 63) == 0;
+    bool pos_r = (ur >> 63) == 0;
     // If the signs of the operands are different, and the sign of the first
     // operand doesn't match the result, there was an overflow.
-    if (((sa >= 0) != (sb >= 0)) && ((sa >= 0) != (sr >= 0))) {
-      dst.SetSignedSat(i, sr < 0);
+    if ((pos_a != pos_b) && (pos_a != pos_r)) {
+      dst.SetSignedSat(i, pos_a);
     }
 
-    dst.SetInt(vform, i, src1.Int(vform, i) - src2.Int(vform, i));
+    dst.SetInt(vform, i, ur >> (64 - lane_size));
   }
   return dst;
 }
@@ -1343,7 +1349,7 @@ LogicVRegister Simulator::sminmax(VectorFormat vform,
     int64_t src1_val = src1.Int(vform, i);
     int64_t src2_val = src2.Int(vform, i);
     int64_t dst_val;
-    if (max == true) {
+    if (max) {
       dst_val = (src1_val > src2_val) ? src1_val : src2_val;
     } else {
       dst_val = (src1_val < src2_val) ? src1_val : src2_val;
@@ -1372,20 +1378,28 @@ LogicVRegister Simulator::smin(VectorFormat vform,
 
 LogicVRegister Simulator::sminmaxp(VectorFormat vform,
                                    LogicVRegister dst,
-                                   int dst_index,
-                                   const LogicVRegister& src,
+                                   const LogicVRegister& src1,
+                                   const LogicVRegister& src2,
                                    bool max) {
-  for (int i = 0; i < LaneCountFromFormat(vform); i += 2) {
-    int64_t src1_val = src.Int(vform, i);
-    int64_t src2_val = src.Int(vform, i + 1);
-    int64_t dst_val;
-    if (max == true) {
-      dst_val = (src1_val > src2_val) ? src1_val : src2_val;
-    } else {
-      dst_val = (src1_val < src2_val) ? src1_val : src2_val;
+  int lanes = LaneCountFromFormat(vform);
+  int64_t result[kMaxLanesPerVector];
+  const LogicVRegister* src = &src1;
+  for (int j = 0; j < 2; j++) {
+    for (int i = 0; i < lanes; i += 2) {
+      int64_t first_val = src->Int(vform, i);
+      int64_t second_val = src->Int(vform, i + 1);
+      int64_t dst_val;
+      if (max) {
+        dst_val = (first_val > second_val) ? first_val : second_val;
+      } else {
+        dst_val = (first_val < second_val) ? first_val : second_val;
+      }
+      VIXL_ASSERT(((i >> 1) + (j * lanes / 2)) < kMaxLanesPerVector);
+      result[(i >> 1) + (j * lanes / 2)] = dst_val;
     }
-    dst.SetInt(vform, dst_index + (i >> 1), dst_val);
+    src = &src2;
   }
+  dst.SetIntArray(vform, result);
   return dst;
 }
 
@@ -1394,10 +1408,7 @@ LogicVRegister Simulator::smaxp(VectorFormat vform,
                                 LogicVRegister dst,
                                 const LogicVRegister& src1,
                                 const LogicVRegister& src2) {
-  dst.ClearForWrite(vform);
-  sminmaxp(vform, dst, 0, src1, true);
-  sminmaxp(vform, dst, LaneCountFromFormat(vform) >> 1, src2, true);
-  return dst;
+  return sminmaxp(vform, dst, src1, src2, true);
 }
 
 
@@ -1405,10 +1416,7 @@ LogicVRegister Simulator::sminp(VectorFormat vform,
                                 LogicVRegister dst,
                                 const LogicVRegister& src1,
                                 const LogicVRegister& src2) {
-  dst.ClearForWrite(vform);
-  sminmaxp(vform, dst, 0, src1, false);
-  sminmaxp(vform, dst, LaneCountFromFormat(vform) >> 1, src2, false);
-  return dst;
+  return sminmaxp(vform, dst, src1, src2, false);
 }
 
 
@@ -1417,9 +1425,9 @@ LogicVRegister Simulator::addp(VectorFormat vform,
                                const LogicVRegister& src) {
   VIXL_ASSERT(vform == kFormatD);
 
-  int64_t dst_val = src.Int(kFormat2D, 0) + src.Int(kFormat2D, 1);
+  uint64_t dst_val = src.Uint(kFormat2D, 0) + src.Uint(kFormat2D, 1);
   dst.ClearForWrite(vform);
-  dst.SetInt(vform, 0, dst_val);
+  dst.SetUint(vform, 0, dst_val);
   return dst;
 }
 
@@ -1480,17 +1488,16 @@ LogicVRegister Simulator::sminmaxv(VectorFormat vform,
                                    LogicVRegister dst,
                                    const LogicVRegister& src,
                                    bool max) {
-  dst.ClearForWrite(vform);
   int64_t dst_val = max ? INT64_MIN : INT64_MAX;
   for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-    dst.SetInt(vform, i, 0);
     int64_t src_val = src.Int(vform, i);
-    if (max == true) {
+    if (max) {
       dst_val = (src_val > dst_val) ? src_val : dst_val;
     } else {
       dst_val = (src_val < dst_val) ? src_val : dst_val;
     }
   }
+  dst.ClearForWrite(ScalarFormatFromFormat(vform));
   dst.SetInt(vform, 0, dst_val);
   return dst;
 }
@@ -1522,7 +1529,7 @@ LogicVRegister Simulator::uminmax(VectorFormat vform,
     uint64_t src1_val = src1.Uint(vform, i);
     uint64_t src2_val = src2.Uint(vform, i);
     uint64_t dst_val;
-    if (max == true) {
+    if (max) {
       dst_val = (src1_val > src2_val) ? src1_val : src2_val;
     } else {
       dst_val = (src1_val < src2_val) ? src1_val : src2_val;
@@ -1551,20 +1558,28 @@ LogicVRegister Simulator::umin(VectorFormat vform,
 
 LogicVRegister Simulator::uminmaxp(VectorFormat vform,
                                    LogicVRegister dst,
-                                   int dst_index,
-                                   const LogicVRegister& src,
+                                   const LogicVRegister& src1,
+                                   const LogicVRegister& src2,
                                    bool max) {
-  for (int i = 0; i < LaneCountFromFormat(vform); i += 2) {
-    uint64_t src1_val = src.Uint(vform, i);
-    uint64_t src2_val = src.Uint(vform, i + 1);
-    uint64_t dst_val;
-    if (max == true) {
-      dst_val = (src1_val > src2_val) ? src1_val : src2_val;
-    } else {
-      dst_val = (src1_val < src2_val) ? src1_val : src2_val;
+  int lanes = LaneCountFromFormat(vform);
+  uint64_t result[kMaxLanesPerVector];
+  const LogicVRegister* src = &src1;
+  for (int j = 0; j < 2; j++) {
+    for (int i = 0; i < LaneCountFromFormat(vform); i += 2) {
+      uint64_t first_val = src->Uint(vform, i);
+      uint64_t second_val = src->Uint(vform, i + 1);
+      uint64_t dst_val;
+      if (max) {
+        dst_val = (first_val > second_val) ? first_val : second_val;
+      } else {
+        dst_val = (first_val < second_val) ? first_val : second_val;
+      }
+      VIXL_ASSERT(((i >> 1) + (j * lanes / 2)) < kMaxLanesPerVector);
+      result[(i >> 1) + (j * lanes / 2)] = dst_val;
     }
-    dst.SetUint(vform, dst_index + (i >> 1), dst_val);
+    src = &src2;
   }
+  dst.SetUintArray(vform, result);
   return dst;
 }
 
@@ -1573,10 +1588,7 @@ LogicVRegister Simulator::umaxp(VectorFormat vform,
                                 LogicVRegister dst,
                                 const LogicVRegister& src1,
                                 const LogicVRegister& src2) {
-  dst.ClearForWrite(vform);
-  uminmaxp(vform, dst, 0, src1, true);
-  uminmaxp(vform, dst, LaneCountFromFormat(vform) >> 1, src2, true);
-  return dst;
+  return uminmaxp(vform, dst, src1, src2, true);
 }
 
 
@@ -1584,10 +1596,7 @@ LogicVRegister Simulator::uminp(VectorFormat vform,
                                 LogicVRegister dst,
                                 const LogicVRegister& src1,
                                 const LogicVRegister& src2) {
-  dst.ClearForWrite(vform);
-  uminmaxp(vform, dst, 0, src1, false);
-  uminmaxp(vform, dst, LaneCountFromFormat(vform) >> 1, src2, false);
-  return dst;
+  return uminmaxp(vform, dst, src1, src2, false);
 }
 
 
@@ -1595,17 +1604,16 @@ LogicVRegister Simulator::uminmaxv(VectorFormat vform,
                                    LogicVRegister dst,
                                    const LogicVRegister& src,
                                    bool max) {
-  dst.ClearForWrite(vform);
   uint64_t dst_val = max ? 0 : UINT64_MAX;
   for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-    dst.SetUint(vform, i, 0);
     uint64_t src_val = src.Uint(vform, i);
-    if (max == true) {
+    if (max) {
       dst_val = (src_val > dst_val) ? src_val : dst_val;
     } else {
       dst_val = (src_val < dst_val) ? src_val : dst_val;
     }
   }
+  dst.ClearForWrite(ScalarFormatFromFormat(vform));
   dst.SetUint(vform, 0, dst_val);
   return dst;
 }
@@ -1922,22 +1930,37 @@ LogicVRegister Simulator::sshl(VectorFormat vform,
     }
 
     int64_t src_val = src1.Int(vform, i);
+    bool src_is_negative = src_val < 0;
     if (shift_val > 63) {
       dst.SetInt(vform, i, 0);
     } else if (shift_val < -63) {
-      dst.SetRounding(i, src_val < 0);
-      dst.SetInt(vform, i, (src_val < 0) ? -1 : 0);
+      dst.SetRounding(i, src_is_negative);
+      dst.SetInt(vform, i, src_is_negative ? -1 : 0);
     } else {
+      // Use unsigned types for shifts, as behaviour is undefined for signed
+      // lhs.
+      uint64_t usrc_val = static_cast<uint64_t>(src_val);
+
       if (shift_val < 0) {
-        // Set rounding state. Rounding only needed on right shifts.
-        if (((src_val >> (-shift_val - 1)) & 1) == 1) {
+        // Convert to right shift.
+        shift_val = -shift_val;
+
+        // Set rounding state by testing most-significant bit shifted out.
+        // Rounding only needed on right shifts.
+        if (((usrc_val >> (shift_val - 1)) & 1) == 1) {
           dst.SetRounding(i, true);
         }
-        src_val >>= -shift_val;
+
+        usrc_val >>= shift_val;
+
+        if (src_is_negative) {
+          // Simulate sign-extension.
+          usrc_val |= (~UINT64_C(0) << (64 - shift_val));
+        }
       } else {
-        src_val <<= shift_val;
+        usrc_val <<= shift_val;
       }
-      dst.SetInt(vform, i, src_val);
+      dst.SetUint(vform, i, usrc_val);
     }
   }
   return dst;
@@ -1993,7 +2016,7 @@ LogicVRegister Simulator::neg(VectorFormat vform,
     if (sa == MinIntFromFormat(vform)) {
       dst.SetSignedSat(i, true);
     }
-    dst.SetInt(vform, i, -sa);
+    dst.SetInt(vform, i, (sa == INT64_MIN) ? sa : -sa);
   }
   return dst;
 }
@@ -2006,12 +2029,14 @@ LogicVRegister Simulator::suqadd(VectorFormat vform,
   for (int i = 0; i < LaneCountFromFormat(vform); i++) {
     int64_t sa = dst.IntLeftJustified(vform, i);
     uint64_t ub = src.UintLeftJustified(vform, i);
-    int64_t sr = sa + ub;
+    uint64_t ur = sa + ub;
 
+    int64_t sr;
+    memcpy(&sr, &ur, sizeof(sr));
     if (sr < sa) {  // Test for signed positive saturation.
       dst.SetInt(vform, i, MaxIntFromFormat(vform));
     } else {
-      dst.SetInt(vform, i, dst.Int(vform, i) + src.Int(vform, i));
+      dst.SetUint(vform, i, dst.Int(vform, i) + src.Uint(vform, i));
     }
   }
   return dst;
@@ -2050,7 +2075,7 @@ LogicVRegister Simulator::abs(VectorFormat vform,
       dst.SetSignedSat(i, true);
     }
     if (sa < 0) {
-      dst.SetInt(vform, i, -sa);
+      dst.SetInt(vform, i, (sa == INT64_MIN) ? sa : -sa);
     } else {
       dst.SetInt(vform, i, sa);
     }
@@ -2319,34 +2344,26 @@ LogicVRegister Simulator::addlp(VectorFormat vform,
                                 bool is_signed,
                                 bool do_accumulate) {
   VectorFormat vformsrc = VectorFormatHalfWidthDoubleLanes(vform);
+  VIXL_ASSERT(LaneSizeInBitsFromFormat(vformsrc) <= 32);
+  VIXL_ASSERT(LaneCountFromFormat(vform) <= 8);
 
-  int64_t sr[16];
-  uint64_t ur[16];
-
-  int laneCount = LaneCountFromFormat(vform);
-  for (int i = 0; i < laneCount; ++i) {
+  uint64_t result[8];
+  int lane_count = LaneCountFromFormat(vform);
+  for (int i = 0; i < lane_count; i++) {
     if (is_signed) {
-      sr[i] = src.Int(vformsrc, 2 * i) + src.Int(vformsrc, 2 * i + 1);
+      result[i] = static_cast<uint64_t>(src.Int(vformsrc, 2 * i) +
+                                        src.Int(vformsrc, 2 * i + 1));
     } else {
-      ur[i] = src.Uint(vformsrc, 2 * i) + src.Uint(vformsrc, 2 * i + 1);
+      result[i] = src.Uint(vformsrc, 2 * i) + src.Uint(vformsrc, 2 * i + 1);
     }
   }
 
   dst.ClearForWrite(vform);
-  for (int i = 0; i < laneCount; ++i) {
+  for (int i = 0; i < lane_count; ++i) {
     if (do_accumulate) {
-      if (is_signed) {
-        dst.SetInt(vform, i, dst.Int(vform, i) + sr[i]);
-      } else {
-        dst.SetUint(vform, i, dst.Uint(vform, i) + ur[i]);
-      }
-    } else {
-      if (is_signed) {
-        dst.SetInt(vform, i, sr[i]);
-      } else {
-        dst.SetUint(vform, i, ur[i]);
-      }
+      result[i] += dst.Uint(vform, i);
     }
+    dst.SetUint(vform, i, result[i]);
   }
 
   return dst;
@@ -2592,12 +2609,38 @@ LogicVRegister Simulator::rshrn2(VectorFormat vform,
 }
 
 
+LogicVRegister Simulator::Table(VectorFormat vform,
+                                LogicVRegister dst,
+                                const LogicVRegister& ind,
+                                bool zero_out_of_bounds,
+                                const LogicVRegister* tab1,
+                                const LogicVRegister* tab2,
+                                const LogicVRegister* tab3,
+                                const LogicVRegister* tab4) {
+  VIXL_ASSERT(tab1 != NULL);
+  const LogicVRegister* tab[4] = {tab1, tab2, tab3, tab4};
+  uint64_t result[kMaxLanesPerVector];
+  for (int i = 0; i < LaneCountFromFormat(vform); i++) {
+    result[i] = zero_out_of_bounds ? 0 : dst.Uint(kFormat16B, i);
+  }
+  for (int i = 0; i < LaneCountFromFormat(vform); i++) {
+    uint64_t j = ind.Uint(vform, i);
+    int tab_idx = static_cast<int>(j >> 4);
+    int j_idx = static_cast<int>(j & 15);
+    if ((tab_idx < 4) && (tab[tab_idx] != NULL)) {
+      result[i] = tab[tab_idx]->Uint(kFormat16B, j_idx);
+    }
+  }
+  dst.SetUintArray(vform, result);
+  return dst;
+}
+
+
 LogicVRegister Simulator::tbl(VectorFormat vform,
                               LogicVRegister dst,
                               const LogicVRegister& tab,
                               const LogicVRegister& ind) {
-  movi(vform, dst, 0);
-  return tbx(vform, dst, tab, ind);
+  return Table(vform, dst, ind, true, &tab);
 }
 
 
@@ -2606,8 +2649,7 @@ LogicVRegister Simulator::tbl(VectorFormat vform,
                               const LogicVRegister& tab,
                               const LogicVRegister& tab2,
                               const LogicVRegister& ind) {
-  movi(vform, dst, 0);
-  return tbx(vform, dst, tab, tab2, ind);
+  return Table(vform, dst, ind, true, &tab, &tab2);
 }
 
 
@@ -2617,8 +2659,7 @@ LogicVRegister Simulator::tbl(VectorFormat vform,
                               const LogicVRegister& tab2,
                               const LogicVRegister& tab3,
                               const LogicVRegister& ind) {
-  movi(vform, dst, 0);
-  return tbx(vform, dst, tab, tab2, tab3, ind);
+  return Table(vform, dst, ind, true, &tab, &tab2, &tab3);
 }
 
 
@@ -2629,8 +2670,7 @@ LogicVRegister Simulator::tbl(VectorFormat vform,
                               const LogicVRegister& tab3,
                               const LogicVRegister& tab4,
                               const LogicVRegister& ind) {
-  movi(vform, dst, 0);
-  return tbx(vform, dst, tab, tab2, tab3, tab4, ind);
+  return Table(vform, dst, ind, true, &tab, &tab2, &tab3, &tab4);
 }
 
 
@@ -2638,16 +2678,7 @@ LogicVRegister Simulator::tbx(VectorFormat vform,
                               LogicVRegister dst,
                               const LogicVRegister& tab,
                               const LogicVRegister& ind) {
-  dst.ClearForWrite(vform);
-  for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-    uint64_t j = ind.Uint(vform, i);
-    switch (j >> 4) {
-      case 0:
-        dst.SetUint(vform, i, tab.Uint(kFormat16B, j & 15));
-        break;
-    }
-  }
-  return dst;
+  return Table(vform, dst, ind, false, &tab);
 }
 
 
@@ -2656,19 +2687,7 @@ LogicVRegister Simulator::tbx(VectorFormat vform,
                               const LogicVRegister& tab,
                               const LogicVRegister& tab2,
                               const LogicVRegister& ind) {
-  dst.ClearForWrite(vform);
-  for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-    uint64_t j = ind.Uint(vform, i);
-    switch (j >> 4) {
-      case 0:
-        dst.SetUint(vform, i, tab.Uint(kFormat16B, j & 15));
-        break;
-      case 1:
-        dst.SetUint(vform, i, tab2.Uint(kFormat16B, j & 15));
-        break;
-    }
-  }
-  return dst;
+  return Table(vform, dst, ind, false, &tab, &tab2);
 }
 
 
@@ -2678,22 +2697,7 @@ LogicVRegister Simulator::tbx(VectorFormat vform,
                               const LogicVRegister& tab2,
                               const LogicVRegister& tab3,
                               const LogicVRegister& ind) {
-  dst.ClearForWrite(vform);
-  for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-    uint64_t j = ind.Uint(vform, i);
-    switch (j >> 4) {
-      case 0:
-        dst.SetUint(vform, i, tab.Uint(kFormat16B, j & 15));
-        break;
-      case 1:
-        dst.SetUint(vform, i, tab2.Uint(kFormat16B, j & 15));
-        break;
-      case 2:
-        dst.SetUint(vform, i, tab3.Uint(kFormat16B, j & 15));
-        break;
-    }
-  }
-  return dst;
+  return Table(vform, dst, ind, false, &tab, &tab2, &tab3);
 }
 
 
@@ -2704,25 +2708,7 @@ LogicVRegister Simulator::tbx(VectorFormat vform,
                               const LogicVRegister& tab3,
                               const LogicVRegister& tab4,
                               const LogicVRegister& ind) {
-  dst.ClearForWrite(vform);
-  for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-    uint64_t j = ind.Uint(vform, i);
-    switch (j >> 4) {
-      case 0:
-        dst.SetUint(vform, i, tab.Uint(kFormat16B, j & 15));
-        break;
-      case 1:
-        dst.SetUint(vform, i, tab2.Uint(kFormat16B, j & 15));
-        break;
-      case 2:
-        dst.SetUint(vform, i, tab3.Uint(kFormat16B, j & 15));
-        break;
-      case 3:
-        dst.SetUint(vform, i, tab4.Uint(kFormat16B, j & 15));
-        break;
-    }
-  }
-  return dst;
+  return Table(vform, dst, ind, false, &tab, &tab2, &tab3, &tab4);
 }
 
 
@@ -3698,7 +3684,14 @@ T Simulator::FPDiv(T op1, T op2) {
     FPProcessException();
     return FPDefaultNaN<T>();
   } else {
-    if (op2 == 0.0) FPProcessException();
+    if (op2 == 0.0) {
+      FPProcessException();
+      if (!std::isnan(op1)) {
+        double op1_sign = copysign(1.0, op1);
+        double op2_sign = copysign(1.0, op2);
+        return static_cast<T>(op1_sign * op2_sign * kFP64PositiveInfinity);
+      }
+    }
 
     // Other cases should be handled by standard arithmetic.
     return op1 / op2;

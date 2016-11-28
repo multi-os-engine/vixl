@@ -159,11 +159,31 @@ class Disassembler {
 
   class DisassemblerStream {
     std::ostream& os_;
+    InstructionType current_instruction_type_;
+    InstructionAttribute current_instruction_attributes_;
 
    public:
-    explicit DisassemblerStream(std::ostream& os) : os_(os) {}
+    explicit DisassemblerStream(std::ostream& os)  // NOLINT(runtime/references)
+        : os_(os),
+          current_instruction_type_(kUndefInstructionType),
+          current_instruction_attributes_(kNoAttribute) {}
     virtual ~DisassemblerStream() {}
     std::ostream& os() const { return os_; }
+    void SetCurrentInstruction(
+        InstructionType current_instruction_type,
+        InstructionAttribute current_instruction_attributes) {
+      current_instruction_type_ = current_instruction_type;
+      current_instruction_attributes_ = current_instruction_attributes;
+    }
+    InstructionType GetCurrentInstructionType() const {
+      return current_instruction_type_;
+    }
+    InstructionAttribute GetCurrentInstructionAttributes() const {
+      return current_instruction_attributes_;
+    }
+    bool Has(InstructionAttribute attributes) const {
+      return (current_instruction_attributes_ & attributes) == attributes;
+    }
     template <typename T>
     DisassemblerStream& operator<<(T value) {
       os_ << value;
@@ -173,7 +193,7 @@ class Disassembler {
       os_ << cond;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Condition cond) {
+    virtual DisassemblerStream& operator<<(Condition cond) {
       os_ << cond;
       return *this;
     }
@@ -185,15 +205,15 @@ class Disassembler {
       os_ << type;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Shift shift) {
+    virtual DisassemblerStream& operator<<(Shift shift) {
       os_ << shift;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Sign sign) {
+    virtual DisassemblerStream& operator<<(Sign sign) {
       os_ << sign;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Alignment alignment) {
+    virtual DisassemblerStream& operator<<(Alignment alignment) {
       os_ << alignment;
       return *this;
     }
@@ -209,35 +229,35 @@ class Disassembler {
       os_ << immediate;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Register reg) {
+    virtual DisassemblerStream& operator<<(Register reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const SRegister reg) {
+    virtual DisassemblerStream& operator<<(SRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const DRegister reg) {
+    virtual DisassemblerStream& operator<<(DRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const QRegister reg) {
+    virtual DisassemblerStream& operator<<(QRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const SpecialRegister reg) {
+    virtual DisassemblerStream& operator<<(SpecialRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const MaskedSpecialRegister reg) {
+    virtual DisassemblerStream& operator<<(MaskedSpecialRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const SpecialFPRegister reg) {
+    virtual DisassemblerStream& operator<<(SpecialFPRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const BankedRegister reg) {
+    virtual DisassemblerStream& operator<<(BankedRegister reg) {
       os_ << reg;
       return *this;
     }
@@ -257,28 +277,32 @@ class Disassembler {
       os_ << list;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Coprocessor coproc) {
+    virtual DisassemblerStream& operator<<(Coprocessor coproc) {
       os_ << coproc;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const CRegister reg) {
+    virtual DisassemblerStream& operator<<(CRegister reg) {
       os_ << reg;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const Endianness endian_specifier) {
+    virtual DisassemblerStream& operator<<(Endianness endian_specifier) {
       os_ << endian_specifier;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const MemoryBarrier option) {
+    virtual DisassemblerStream& operator<<(MemoryBarrier option) {
       os_ << option;
       return *this;
     }
-    virtual DisassemblerStream& operator<<(const InterruptFlags iflags) {
+    virtual DisassemblerStream& operator<<(InterruptFlags iflags) {
       os_ << iflags;
       return *this;
     }
     virtual DisassemblerStream& operator<<(const Operand& operand) {
       if (operand.IsImmediate()) {
+        if (Has(kBitwise)) {
+          return *this << "#0x" << std::hex << operand.GetImmediate()
+                       << std::dec;
+        }
         return *this << "#" << operand.GetImmediate();
       }
       if (operand.IsImmediateShiftedRegister()) {
@@ -386,17 +410,16 @@ class Disassembler {
   ITBlock it_block_;
   DisassemblerStream* os_;
   bool owns_os_;
-  uint32_t pc_;
+  uint32_t code_address_;
 
  public:
-  explicit Disassembler(std::ostream& os, uint32_t pc = 0)  // NOLINT
+  explicit Disassembler(std::ostream& os,  // NOLINT(runtime/references)
+                        uint32_t code_address = 0)
       : os_(new DisassemblerStream(os)),
         owns_os_(true),
-        pc_(pc) {}
-  explicit Disassembler(DisassemblerStream* os, uint32_t pc = 0)  // NOLINT
-      : os_(os),
-        owns_os_(false),
-        pc_(pc) {}
+        code_address_(code_address) {}
+  explicit Disassembler(DisassemblerStream* os, uint32_t code_address = 0)
+      : os_(os), owns_os_(false), code_address_(code_address) {}
   virtual ~Disassembler() {
     if (owns_os_) {
       delete os_;
@@ -447,8 +470,8 @@ class Disassembler {
   virtual void UnpredictableA32(uint32_t /*instr*/) { return Unpredictable(); }
 
   static bool Is16BitEncoding(uint32_t instr) { return instr < 0xe8000000; }
-  uint32_t GetPc() const { return pc_; }
-  void JumpToPc(uint32_t pc) { pc_ = pc; }
+  uint32_t GetCodeAddress() const { return code_address_; }
+  void SetCodeAddress(uint32_t code_address) { code_address_ = code_address; }
 
   // Start of generated code.
 
@@ -2543,13 +2566,15 @@ DataTypeValue Dt_size_16_Decode(uint32_t value);
 
 class PrintDisassembler : public Disassembler {
  public:
-  explicit PrintDisassembler(std::ostream& os, uint32_t pc = 0)  // NOLINT
-      : Disassembler(os, pc) {}
-  explicit PrintDisassembler(DisassemblerStream* os, uint32_t pc = 0)  // NOLINT
-      : Disassembler(os, pc) {}
+  explicit PrintDisassembler(std::ostream& os,  // NOLINT(runtime/references)
+                             uint32_t code_address = 0)
+      : Disassembler(os, code_address) {}
+  explicit PrintDisassembler(DisassemblerStream* os, uint32_t code_address = 0)
+      : Disassembler(os, code_address) {}
 
-  virtual void PrintPc(uint32_t pc) {
-    os() << "0x" << std::hex << std::setw(8) << std::setfill('0') << pc << "\t";
+  virtual void PrintCodeAddress(uint32_t code_address) {
+    os() << "0x" << std::hex << std::setw(8) << std::setfill('0')
+         << code_address << "\t";
   }
 
   virtual void PrintOpcode16(uint32_t opcode) {
@@ -2568,11 +2593,12 @@ class PrintDisassembler : public Disassembler {
   }
 
   // Returns the address of the next instruction.
-  const uint16_t* DecodeT32At(const uint16_t* instruction_address);
+  const uint16_t* DecodeT32At(const uint16_t* instruction_address,
+                              const uint16_t* buffer_end);
   void DecodeT32(uint32_t instruction);
   void DecodeA32(uint32_t instruction);
-  void DisassembleA32Buffer(const uint32_t* buffer, uint32_t size_in_bytes);
-  void DisassembleT32Buffer(const uint16_t* buffer, uint32_t size_in_bytes);
+  void DisassembleA32Buffer(const uint32_t* buffer, size_t size_in_bytes);
+  void DisassembleT32Buffer(const uint16_t* buffer, size_t size_in_bytes);
 };
 
 }  // namespace aarch32

@@ -51,7 +51,7 @@
 
 #define SETUP() MacroAssembler masm(BUF_SIZE)
 
-#define START() masm.GetBuffer().Reset()
+#define START() masm.GetBuffer()->Reset()
 
 #define END() \
   __ Hlt(0);  \
@@ -66,17 +66,17 @@
 
 #define SETUP() MacroAssembler masm(BUF_SIZE);
 
-#define START()             \
-  masm.GetBuffer().Reset(); \
-  __ Push(r4);              \
-  __ Push(r5);              \
-  __ Push(r6);              \
-  __ Push(r7);              \
-  __ Push(r8);              \
-  __ Push(r9);              \
-  __ Push(r10);             \
-  __ Push(r11);             \
-  __ Push(r12);             \
+#define START()              \
+  masm.GetBuffer()->Reset(); \
+  __ Push(r4);               \
+  __ Push(r5);               \
+  __ Push(r6);               \
+  __ Push(r7);               \
+  __ Push(r8);               \
+  __ Push(r9);               \
+  __ Push(r10);              \
+  __ Push(r11);              \
+  __ Push(r12);              \
   __ Push(lr)
 
 #define END()  \
@@ -93,15 +93,14 @@
   __ Bx(lr);   \
   __ FinalizeCode();
 
-// Copy the generated code into a memory area garanteed to be executable before
-// executing it.
-#define RUN()                                                  \
-  {                                                            \
-    ExecutableMemory code(masm.GetBuffer().GetCursorOffset()); \
-    code.Write(masm.GetBuffer().GetOffsetAddress<byte*>(0),    \
-               masm.GetBuffer().GetCursorOffset());            \
-    int pcs_offset = masm.IsUsingT32() ? 1 : 0;                \
-    code.Execute(pcs_offset);                                  \
+#define RUN()                                                 \
+  {                                                           \
+    int pcs_offset = masm.IsUsingT32() ? 1 : 0;               \
+    masm.GetBuffer()->SetExecutable();                        \
+    ExecuteMemory(masm.GetBuffer()->GetStartAddress<byte*>(), \
+                  masm.GetSizeOfCodeGenerated(),              \
+                  pcs_offset);                                \
+    masm.GetBuffer()->SetWritable();                          \
   }
 
 #define TEARDOWN()
@@ -118,6 +117,15 @@ namespace aarch32 {
   M(Str)                       \
   M(Strb)
 
+
+// The following definitions are defined again in each generated test, therefore
+// we need to place them in an anomymous namespace. It expresses that they are
+// local to this file only, and the compiler is not allowed to share these types
+// across test files during template instantiation. Specifically, `Operands` and
+// `Inputs` have various layouts across generated tests so they absolutely
+// cannot be shared.
+
+namespace {
 
 // Values to be passed to the assembler to produce the instruction under test.
 struct Operands {
@@ -239,7 +247,7 @@ static const Inputs kNegativePreIndex[] =
 
 
 // A loop will be generated for each element of this array.
-static const TestLoopData kTests[] =
+const TestLoopData kTests[] =
     {{{eq, r0, r1, plus, 0, Offset},
       "eq r0 r1 plus 0 Offset",
       "Condition_eq_r0_r1_plus_0_Offset",
@@ -3332,15 +3340,15 @@ struct TestResult {
 
 
 // The maximum number of errors to report in detail for each test.
-static const unsigned kErrorReportLimit = 8;
+const unsigned kErrorReportLimit = 8;
 
 typedef void (MacroAssembler::*Fn)(Condition cond,
                                    Register rd,
                                    const MemOperand& memop);
 
-static void TestHelper(Fn instruction,
-                       const char* mnemonic,
-                       const TestResult reference[]) {
+void TestHelper(Fn instruction,
+                const char* mnemonic,
+                const TestResult reference[]) {
   SETUP();
   masm.UseA32();
   START();
@@ -3360,8 +3368,8 @@ static void TestHelper(Fn instruction,
     results[i]->outputs = new Inputs[kTests[i].input_size];
     results[i]->output_size = kTests[i].input_size;
 
-    uintptr_t input_address = reinterpret_cast<uintptr_t>(kTests[i].inputs);
-    uintptr_t result_address = reinterpret_cast<uintptr_t>(results[i]->outputs);
+    size_t input_stride = sizeof(kTests[i].inputs[0]) * kTests[i].input_size;
+    VIXL_ASSERT(IsUint32(input_stride));
 
     scratch_memory_buffers[i] = NULL;
 
@@ -3388,11 +3396,9 @@ static void TestHelper(Fn instruction,
 
     // Initialize `input_ptr` to the first element and `input_end` the address
     // after the array.
-    __ Mov(input_ptr, input_address);
-    __ Add(input_end,
-           input_ptr,
-           sizeof(kTests[i].inputs[0]) * kTests[i].input_size);
-    __ Mov(result_ptr, result_address);
+    __ Mov(input_ptr, Operand::From(kTests[i].inputs));
+    __ Add(input_end, input_ptr, static_cast<uint32_t>(input_stride));
+    __ Mov(result_ptr, Operand::From(results[i]->outputs));
     __ Bind(&loop);
 
     {
@@ -3410,8 +3416,6 @@ static void TestHelper(Fn instruction,
     __ Ldr(rd, MemOperand(input_ptr, offsetof(Inputs, rd)));
     // Allocate 4 bytes for the instruction to work with.
     scratch_memory_buffers[i] = new byte[4];
-    uintptr_t scratch_memory_addr =
-        reinterpret_cast<uintptr_t>(scratch_memory_buffers[i]);
     {
       UseScratchRegisterScope temp_registers(&masm);
 
@@ -3419,7 +3423,7 @@ static void TestHelper(Fn instruction,
       Register base_register = memop.GetBaseRegister();
 
       // Write the expected data into the scratch buffer.
-      __ Mov(base_register, scratch_memory_addr);
+      __ Mov(base_register, Operand::From(scratch_memory_buffers[i]));
       __ Ldr(memop_tmp, MemOperand(input_ptr, offsetof(Inputs, memop) + 4));
       __ Str(memop_tmp, MemOperand(base_register));
 
@@ -3493,7 +3497,7 @@ static void TestHelper(Fn instruction,
 
       // Record the value of the base register, as an offset from the scratch
       // buffer's address.
-      __ Mov(memop_tmp, scratch_memory_addr);
+      __ Mov(memop_tmp, Operand::From(scratch_memory_buffers[i]));
       __ Sub(base_register, base_register, memop_tmp);
       __ Str(base_register, MemOperand(result_ptr, offsetof(Inputs, memop)));
 
@@ -3504,9 +3508,9 @@ static void TestHelper(Fn instruction,
 
 
     // Advance the result pointer.
-    __ Add(result_ptr, result_ptr, sizeof(kTests[i].inputs[0]));
+    __ Add(result_ptr, result_ptr, Operand::From(sizeof(kTests[i].inputs[0])));
     // Loop back until `input_ptr` is lower than `input_base`.
-    __ Add(input_ptr, input_ptr, sizeof(kTests[i].inputs[0]));
+    __ Add(input_ptr, input_ptr, Operand::From(sizeof(kTests[i].inputs[0])));
     __ Cmp(input_ptr, input_end);
     __ B(ne, &loop);
   }
@@ -3518,7 +3522,7 @@ static void TestHelper(Fn instruction,
   if (Test::generate_test_trace()) {
     // Print the results.
     for (size_t i = 0; i < ARRAY_SIZE(kTests); i++) {
-      printf("static const Inputs kOutputs_%s_%s[] = {\n",
+      printf("const Inputs kOutputs_%s_%s[] = {\n",
              mnemonic,
              kTests[i].identifier);
       for (size_t j = 0; j < results[i]->output_size; j++) {
@@ -3534,7 +3538,7 @@ static void TestHelper(Fn instruction,
       }
       printf("};\n");
     }
-    printf("static const TestResult kReference%s[] = {\n", mnemonic);
+    printf("const TestResult kReference%s[] = {\n", mnemonic);
     for (size_t i = 0; i < ARRAY_SIZE(kTests); i++) {
       printf("  {\n");
       printf("    ARRAY_SIZE(kOutputs_%s_%s),\n",
@@ -3625,15 +3629,30 @@ static void TestHelper(Fn instruction,
 }
 
 // Instantiate tests for each instruction in the list.
+// TODO: Remove this limitation by having a sandboxing mechanism.
+#if defined(VIXL_HOST_POINTER_32)
 #define TEST(mnemonic)                                                      \
-  static void Test_##mnemonic() {                                           \
+  void Test_##mnemonic() {                                                  \
     TestHelper(&MacroAssembler::mnemonic, #mnemonic, kReference##mnemonic); \
   }                                                                         \
-  static Test test_##mnemonic(                                              \
+  Test test_##mnemonic(                                                     \
       "AARCH32_SIMULATOR_COND_RD_MEMOP_IMMEDIATE_8192_A32_" #mnemonic,      \
       &Test_##mnemonic);
+#else
+#define TEST(mnemonic)                                                 \
+  void Test_##mnemonic() {                                             \
+    VIXL_WARNING("This test can only run on a 32-bit host.\n");        \
+    USE(TestHelper);                                                   \
+  }                                                                    \
+  Test test_##mnemonic(                                                \
+      "AARCH32_SIMULATOR_COND_RD_MEMOP_IMMEDIATE_8192_A32_" #mnemonic, \
+      &Test_##mnemonic);
+#endif
+
 FOREACH_INSTRUCTION(TEST)
 #undef TEST
 
-}  // aarch32
-}  // vixl
+}  // namespace
+
+}  // namespace aarch32
+}  // namespace vixl
