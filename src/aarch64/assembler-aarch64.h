@@ -27,12 +27,13 @@
 #ifndef VIXL_AARCH64_ASSEMBLER_AARCH64_H_
 #define VIXL_AARCH64_ASSEMBLER_AARCH64_H_
 
-#include "code-buffer-vixl.h"
-#include "globals-vixl.h"
-#include "invalset-vixl.h"
-#include "utils-vixl.h"
+#include "../assembler-base-vixl.h"
+#include "../code-generation-scopes-vixl.h"
+#include "../globals-vixl.h"
+#include "../invalset-vixl.h"
+#include "../utils-vixl.h"
 
-#include "aarch64/operands-aarch64.h"
+#include "operands-aarch64.h"
 
 namespace vixl {
 namespace aarch64 {
@@ -399,32 +400,31 @@ enum LoadStoreScalingOption {
 
 
 // Assembler.
-class Assembler {
+class Assembler : public internal::AssemblerBase {
  public:
   explicit Assembler(
-      PositionIndependentCodeOption pic = PositionIndependentCode);
+      PositionIndependentCodeOption pic = PositionIndependentCode)
+      : pic_(pic) {}
   explicit Assembler(
       size_t capacity,
-      PositionIndependentCodeOption pic = PositionIndependentCode);
+      PositionIndependentCodeOption pic = PositionIndependentCode)
+      : AssemblerBase(capacity), pic_(pic) {}
   Assembler(byte* buffer,
             size_t capacity,
-            PositionIndependentCodeOption pic = PositionIndependentCode);
+            PositionIndependentCodeOption pic = PositionIndependentCode)
+      : AssemblerBase(buffer, capacity), pic_(pic) {}
 
-  // The destructor asserts that one of the following is true:
+  // Upon destruction, the code will assert that one of the following is true:
   //  * The Assembler object has not been used.
   //  * Nothing has been emitted since the last Reset() call.
   //  * Nothing has been emitted since the last FinalizeCode() call.
-  ~Assembler();
+  ~Assembler() {}
 
   // System functions.
 
   // Start generating code from the beginning of the buffer, discarding any code
   // and data that has already been emitted into the buffer.
   void Reset();
-
-  // Finalize a code buffer of generated instructions. This function must be
-  // called before executing or copying code from the buffer.
-  void FinalizeCode();
 
   // Label.
   // Bind a label to the current PC.
@@ -436,23 +436,17 @@ class Assembler {
   // Place a literal at the current PC.
   void place(RawLiteral* literal);
 
-  ptrdiff_t GetCursorOffset() const { return buffer_->GetCursorOffset(); }
   VIXL_DEPRECATED("GetCursorOffset", ptrdiff_t CursorOffset() const) {
     return GetCursorOffset();
   }
 
-  ptrdiff_t GetBufferEndOffset() const {
-    return static_cast<ptrdiff_t>(buffer_->GetCapacity());
+  VIXL_DEPRECATED("GetBuffer().GetCapacity()",
+                  ptrdiff_t GetBufferEndOffset() const) {
+    return static_cast<ptrdiff_t>(GetBuffer().GetCapacity());
   }
-  VIXL_DEPRECATED("GetBufferEndOffset", ptrdiff_t BufferEndOffset() const) {
-    return GetBufferEndOffset();
-  }
-
-  // Return the address of an offset in the buffer.
-  template <typename T>
-  T GetOffsetAddress(ptrdiff_t offset) const {
-    VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
-    return buffer_->GetOffsetAddress<T>(offset);
+  VIXL_DEPRECATED("GetBuffer().GetCapacity()",
+                  ptrdiff_t BufferEndOffset() const) {
+    return GetBuffer().GetCapacity();
   }
 
   // Return the address of a bound label.
@@ -460,25 +454,11 @@ class Assembler {
   T GetLabelAddress(const Label* label) const {
     VIXL_ASSERT(label->IsBound());
     VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
-    return GetOffsetAddress<T>(label->GetLocation());
-  }
-
-  // Return the address of the cursor.
-  template <typename T>
-  T GetCursorAddress() const {
-    VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
-    return GetOffsetAddress<T>(GetCursorOffset());
-  }
-
-  // Return the address of the start of the buffer.
-  template <typename T>
-  T GetStartAddress() const {
-    VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
-    return GetOffsetAddress<T>(0);
+    return GetBuffer().GetOffsetAddress<T>(label->GetLocation());
   }
 
   Instruction* GetInstructionAt(ptrdiff_t instruction_offset) {
-    return GetOffsetAddress<Instruction*>(instruction_offset);
+    return GetBuffer()->GetOffsetAddress<Instruction*>(instruction_offset);
   }
   VIXL_DEPRECATED("GetInstructionAt",
                   Instruction* InstructionAt(ptrdiff_t instruction_offset)) {
@@ -487,9 +467,10 @@ class Assembler {
 
   ptrdiff_t GetInstructionOffset(Instruction* instruction) {
     VIXL_STATIC_ASSERT(sizeof(*instruction) == 1);
-    ptrdiff_t offset = instruction - GetStartAddress<Instruction*>();
+    ptrdiff_t offset =
+        instruction - GetBuffer()->GetStartAddress<Instruction*>();
     VIXL_ASSERT((0 <= offset) &&
-                (offset < static_cast<ptrdiff_t>(GetBufferCapacity())));
+                (offset < static_cast<ptrdiff_t>(GetBuffer()->GetCapacity())));
     return offset;
   }
   VIXL_DEPRECATED("GetInstructionOffset",
@@ -516,28 +497,28 @@ class Assembler {
   void b(Label* label, Condition cond);
 
   // Unconditional branch to PC offset.
-  void b(int imm26);
+  void b(int64_t imm26);
 
   // Conditional branch to PC offset.
-  void b(int imm19, Condition cond);
+  void b(int64_t imm19, Condition cond);
 
   // Branch with link to label.
   void bl(Label* label);
 
   // Branch with link to PC offset.
-  void bl(int imm26);
+  void bl(int64_t imm26);
 
   // Compare and branch to label if zero.
   void cbz(const Register& rt, Label* label);
 
   // Compare and branch to PC offset if zero.
-  void cbz(const Register& rt, int imm19);
+  void cbz(const Register& rt, int64_t imm19);
 
   // Compare and branch to label if not zero.
   void cbnz(const Register& rt, Label* label);
 
   // Compare and branch to PC offset if not zero.
-  void cbnz(const Register& rt, int imm19);
+  void cbnz(const Register& rt, int64_t imm19);
 
   // Table lookup from one register.
   void tbl(const VRegister& vd, const VRegister& vn, const VRegister& vm);
@@ -591,13 +572,13 @@ class Assembler {
   void tbz(const Register& rt, unsigned bit_pos, Label* label);
 
   // Test bit and branch to PC offset if zero.
-  void tbz(const Register& rt, unsigned bit_pos, int imm14);
+  void tbz(const Register& rt, unsigned bit_pos, int64_t imm14);
 
   // Test bit and branch to label if not zero.
   void tbnz(const Register& rt, unsigned bit_pos, Label* label);
 
   // Test bit and branch to PC offset if not zero.
-  void tbnz(const Register& rt, unsigned bit_pos, int imm14);
+  void tbnz(const Register& rt, unsigned bit_pos, int64_t imm14);
 
   // Address calculation instructions.
   // Calculate a PC-relative address. Unlike for branches the offset in adr is
@@ -607,13 +588,13 @@ class Assembler {
   void adr(const Register& xd, Label* label);
 
   // Calculate the address of a PC offset.
-  void adr(const Register& xd, int imm21);
+  void adr(const Register& xd, int64_t imm21);
 
   // Calculate the page address of a label.
   void adrp(const Register& xd, Label* label);
 
   // Calculate the page address of a PC offset.
-  void adrp(const Register& xd, int imm21);
+  void adrp(const Register& xd, int64_t imm21);
 
   // Data Processing instructions.
   // Add.
@@ -1114,10 +1095,10 @@ class Assembler {
   void ldrsw(const Register& xt, RawLiteral* literal);
 
   // Load integer or FP register from pc + imm19 << 2.
-  void ldr(const CPURegister& rt, int imm19);
+  void ldr(const CPURegister& rt, int64_t imm19);
 
   // Load word with sign extension from pc + imm19 << 2.
-  void ldrsw(const Register& xt, int imm19);
+  void ldrsw(const Register& xt, int64_t imm19);
 
   // Store exclusive byte.
   void stxrb(const Register& rs, const Register& rt, const MemOperand& dst);
@@ -1205,7 +1186,7 @@ class Assembler {
   void prfm(PrefetchOperation op, RawLiteral* literal);
 
   // Prefetch from pc + imm19 << 2.
-  void prfm(PrefetchOperation op, int imm19);
+  void prfm(PrefetchOperation op, int64_t imm19);
 
   // Move instructions. The default shift of -1 indicates that the move
   // instruction will calculate an appropriate 16-bit immediate and left shift
@@ -2581,8 +2562,8 @@ class Assembler {
   // Emit data in the instruction stream.
   template <typename T>
   void dc(T data) {
-    VIXL_ASSERT(buffer_monitor_ > 0);
-    buffer_->Emit<T>(data);
+    VIXL_ASSERT(AllowAssembler());
+    GetBuffer()->Emit<T>(data);
   }
 
   // Copy a string into the instruction stream, including the terminating NULL
@@ -2590,10 +2571,10 @@ class Assembler {
   // subsequent instructions.
   void EmitString(const char* string) {
     VIXL_ASSERT(string != NULL);
-    VIXL_ASSERT(buffer_monitor_ > 0);
+    VIXL_ASSERT(AllowAssembler());
 
-    buffer_->EmitString(string);
-    buffer_->Align();
+    GetBuffer()->EmitString(string);
+    GetBuffer()->Align();
   }
 
   // Code generation helpers.
@@ -2666,33 +2647,33 @@ class Assembler {
   static Instr Cond(Condition cond) { return cond << Condition_offset; }
 
   // PC-relative address encoding.
-  static Instr ImmPCRelAddress(int imm21) {
+  static Instr ImmPCRelAddress(int64_t imm21) {
     VIXL_ASSERT(IsInt21(imm21));
-    Instr imm = static_cast<Instr>(TruncateToInt21(imm21));
+    Instr imm = static_cast<Instr>(TruncateToUint21(imm21));
     Instr immhi = (imm >> ImmPCRelLo_width) << ImmPCRelHi_offset;
     Instr immlo = imm << ImmPCRelLo_offset;
     return (immhi & ImmPCRelHi_mask) | (immlo & ImmPCRelLo_mask);
   }
 
   // Branch encoding.
-  static Instr ImmUncondBranch(int imm26) {
+  static Instr ImmUncondBranch(int64_t imm26) {
     VIXL_ASSERT(IsInt26(imm26));
-    return TruncateToInt26(imm26) << ImmUncondBranch_offset;
+    return TruncateToUint26(imm26) << ImmUncondBranch_offset;
   }
 
-  static Instr ImmCondBranch(int imm19) {
+  static Instr ImmCondBranch(int64_t imm19) {
     VIXL_ASSERT(IsInt19(imm19));
-    return TruncateToInt19(imm19) << ImmCondBranch_offset;
+    return TruncateToUint19(imm19) << ImmCondBranch_offset;
   }
 
-  static Instr ImmCmpBranch(int imm19) {
+  static Instr ImmCmpBranch(int64_t imm19) {
     VIXL_ASSERT(IsInt19(imm19));
-    return TruncateToInt19(imm19) << ImmCmpBranch_offset;
+    return TruncateToUint19(imm19) << ImmCmpBranch_offset;
   }
 
-  static Instr ImmTestBranch(int imm14) {
+  static Instr ImmTestBranch(int64_t imm14) {
     VIXL_ASSERT(IsInt14(imm14));
-    return TruncateToInt14(imm14) << ImmTestBranch_offset;
+    return TruncateToUint14(imm14) << ImmTestBranch_offset;
   }
 
   static Instr ImmTestBranchBit(unsigned bit_pos) {
@@ -2751,9 +2732,9 @@ class Assembler {
     return immr << ImmRotate_offset;
   }
 
-  static Instr ImmLLiteral(int imm19) {
+  static Instr ImmLLiteral(int64_t imm19) {
     VIXL_ASSERT(IsInt19(imm19));
-    return TruncateToInt19(imm19) << ImmLLiteral_offset;
+    return TruncateToUint19(imm19) << ImmLLiteral_offset;
   }
 
   static Instr BitN(unsigned bitn, unsigned reg_size) {
@@ -2790,21 +2771,21 @@ class Assembler {
   }
 
   // MemOperand offset encoding.
-  static Instr ImmLSUnsigned(int imm12) {
+  static Instr ImmLSUnsigned(int64_t imm12) {
     VIXL_ASSERT(IsUint12(imm12));
-    return imm12 << ImmLSUnsigned_offset;
+    return TruncateToUint12(imm12) << ImmLSUnsigned_offset;
   }
 
-  static Instr ImmLS(int imm9) {
+  static Instr ImmLS(int64_t imm9) {
     VIXL_ASSERT(IsInt9(imm9));
-    return TruncateToInt9(imm9) << ImmLS_offset;
+    return TruncateToUint9(imm9) << ImmLS_offset;
   }
 
-  static Instr ImmLSPair(int imm7, unsigned access_size) {
-    VIXL_ASSERT(((imm7 >> access_size) << access_size) == imm7);
-    int scaled_imm7 = imm7 >> access_size;
+  static Instr ImmLSPair(int64_t imm7, unsigned access_size) {
+    VIXL_ASSERT(IsMultiple(imm7, 1 << access_size));
+    int64_t scaled_imm7 = imm7 / (1 << access_size);
     VIXL_ASSERT(IsInt7(scaled_imm7));
-    return TruncateToInt7(scaled_imm7) << ImmLSPair_offset;
+    return TruncateToUint7(scaled_imm7) << ImmLSPair_offset;
   }
 
   static Instr ImmShiftLS(unsigned shift_amount) {
@@ -3066,45 +3047,29 @@ class Assembler {
   // Size of the code generated since label to the current position.
   size_t GetSizeOfCodeGeneratedSince(Label* label) const {
     VIXL_ASSERT(label->IsBound());
-    return buffer_->GetOffsetFrom(label->GetLocation());
+    return GetBuffer().GetOffsetFrom(label->GetLocation());
   }
   VIXL_DEPRECATED("GetSizeOfCodeGeneratedSince",
                   size_t SizeOfCodeGeneratedSince(Label* label) const) {
     return GetSizeOfCodeGeneratedSince(label);
   }
 
-  size_t GetSizeOfCodeGenerated() const { return buffer_->GetCursorOffset(); }
-  VIXL_DEPRECATED("GetSizeOfCodeGenerated",
-                  size_t SizeOfCodeGenerated() const) {
-    return GetSizeOfCodeGenerated();
+  VIXL_DEPRECATED("GetBuffer().GetCapacity()",
+                  size_t GetBufferCapacity() const) {
+    return GetBuffer().GetCapacity();
+  }
+  VIXL_DEPRECATED("GetBuffer().GetCapacity()", size_t BufferCapacity() const) {
+    return GetBuffer().GetCapacity();
   }
 
-  size_t GetBufferCapacity() const { return buffer_->GetCapacity(); }
-  VIXL_DEPRECATED("GetBufferCapacity", size_t BufferCapacity() const) {
-    return GetBufferCapacity();
+  VIXL_DEPRECATED("GetBuffer().GetRemainingBytes()",
+                  size_t GetRemainingBufferSpace() const) {
+    return GetBuffer().GetRemainingBytes();
   }
-
-  size_t GetRemainingBufferSpace() const {
-    return buffer_->GetRemainingBytes();
-  }
-  VIXL_DEPRECATED("GetRemainingBufferSpace",
+  VIXL_DEPRECATED("GetBuffer().GetRemainingBytes()",
                   size_t RemainingBufferSpace() const) {
-    return GetRemainingBufferSpace();
+    return GetBuffer().GetRemainingBytes();
   }
-
-  void EnsureSpaceFor(size_t amount) { buffer_->EnsureSpaceFor(amount); }
-
-#ifdef VIXL_DEBUG
-  void AcquireBuffer() {
-    VIXL_ASSERT(buffer_monitor_ >= 0);
-    buffer_monitor_++;
-  }
-
-  void ReleaseBuffer() {
-    buffer_monitor_--;
-    VIXL_ASSERT(buffer_monitor_ >= 0);
-  }
-#endif
 
   PositionIndependentCodeOption GetPic() const { return pic_; }
   VIXL_DEPRECATED("GetPic", PositionIndependentCodeOption pic() const) {
@@ -3119,7 +3084,6 @@ class Assembler {
   static const Register& AppropriateZeroRegFor(const CPURegister& reg) {
     return reg.Is64Bits() ? xzr : wzr;
   }
-
 
  protected:
   void LoadStore(const CPURegister& rt,
@@ -3372,80 +3336,26 @@ class Assembler {
   // Emit the instruction in buffer_.
   void Emit(Instr instruction) {
     VIXL_STATIC_ASSERT(sizeof(instruction) == kInstructionSize);
-    VIXL_ASSERT(buffer_monitor_ > 0);
-    buffer_->Emit32(instruction);
+    VIXL_ASSERT(AllowAssembler());
+    GetBuffer()->Emit32(instruction);
   }
 
-  // Buffer where the code is emitted.
-  CodeBuffer* buffer_;
   PositionIndependentCodeOption pic_;
-
-  int64_t buffer_monitor_;
-};
-
-
-// All Assembler emits MUST acquire/release the underlying code buffer. The
-// helper scope below will do so and optionally ensure the buffer is big enough
-// to receive the emit. It is possible to request the scope not to perform any
-// checks (kNoCheck) if for example it is known in advance the buffer size is
-// adequate or there is some other size checking mechanism in place.
-class CodeBufferCheckScope {
- public:
-  // Tell whether or not the scope needs to ensure the associated CodeBuffer
-  // has enough space for the requested size.
-  enum CheckPolicy { kNoCheck, kCheck };
-
-  // Tell whether or not the scope should assert the amount of code emitted
-  // within the scope is consistent with the requested amount.
-  enum AssertPolicy {
-    kNoAssert,    // No assert required.
-    kExactSize,   // The code emitted must be exactly size bytes.
-    kMaximumSize  // The code emitted must be at most size bytes.
-  };
-
-  // This constructor implicitly calls `Open` to initialise the scope (`assm`
-  // must not be `NULL`), so it is ready to use immediately after it has been
-  // constructed.
-  CodeBufferCheckScope(Assembler* assm,
-                       size_t size,
-                       CheckPolicy check_policy = kCheck,
-                       AssertPolicy assert_policy = kMaximumSize);
-
-  // This constructor does not implicitly initialise the scope. Instead, the
-  // user is required to explicitly call the `Open` function before using the
-  // scope.
-  CodeBufferCheckScope();
-
-  // This function performs the actual initialisation work.
-  void Open(Assembler* assm,
-            size_t size,
-            CheckPolicy check_policy = kCheck,
-            AssertPolicy assert_policy = kMaximumSize);
-
-  virtual ~CodeBufferCheckScope();
-
-  // This function performs the cleaning-up work. It must succeed even if the
-  // scope has not been opened. It is safe to call multiple times.
-  void Close();
-
- protected:
-  Assembler* assm_;
-  size_t size_;
-  AssertPolicy assert_policy_;
-  Label start_;
-  bool initialised_;
 };
 
 
 template <typename T>
 void Literal<T>::UpdateValue(T new_value, const Assembler* assembler) {
-  return UpdateValue(new_value, assembler->GetStartAddress<uint8_t*>());
+  return UpdateValue(new_value,
+                     assembler->GetBuffer().GetStartAddress<uint8_t*>());
 }
 
 
 template <typename T>
 void Literal<T>::UpdateValue(T high64, T low64, const Assembler* assembler) {
-  return UpdateValue(high64, low64, assembler->GetStartAddress<uint8_t*>());
+  return UpdateValue(high64,
+                     low64,
+                     assembler->GetBuffer().GetStartAddress<uint8_t*>());
 }
 
 

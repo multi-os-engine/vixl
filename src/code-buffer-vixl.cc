@@ -24,6 +24,10 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+extern "C" {
+#include <sys/mman.h>
+}
+
 #include "code-buffer-vixl.h"
 #include "utils-vixl.h"
 
@@ -39,7 +43,12 @@ CodeBuffer::CodeBuffer(size_t capacity)
   if (capacity_ == 0) {
     return;
   }
-  buffer_ = reinterpret_cast<byte*>(malloc(capacity_));
+  buffer_ = reinterpret_cast<byte*>(mmap(NULL,
+                                         capacity,
+                                         PROT_READ | PROT_WRITE,
+                                         MAP_PRIVATE | MAP_ANONYMOUS,
+                                         -1,
+                                         0));
   VIXL_CHECK(buffer_ != NULL);
   // Aarch64 instructions must be word aligned, we assert the default allocator
   // always returns word align memory.
@@ -49,7 +58,7 @@ CodeBuffer::CodeBuffer(size_t capacity)
 }
 
 
-CodeBuffer::CodeBuffer(void* buffer, size_t capacity)
+CodeBuffer::CodeBuffer(byte* buffer, size_t capacity)
     : buffer_(reinterpret_cast<byte*>(buffer)),
       managed_(false),
       cursor_(reinterpret_cast<byte*>(buffer)),
@@ -62,8 +71,20 @@ CodeBuffer::CodeBuffer(void* buffer, size_t capacity)
 CodeBuffer::~CodeBuffer() {
   VIXL_ASSERT(!IsDirty());
   if (managed_) {
-    free(buffer_);
+    munmap(buffer_, capacity_);
   }
+}
+
+
+void CodeBuffer::SetExecutable() {
+  int ret = mprotect(buffer_, capacity_, PROT_READ | PROT_EXEC);
+  VIXL_CHECK(ret == 0);
+}
+
+
+void CodeBuffer::SetWritable() {
+  int ret = mprotect(buffer_, capacity_, PROT_READ | PROT_WRITE);
+  VIXL_CHECK(ret == 0);
 }
 
 
@@ -94,13 +115,11 @@ void CodeBuffer::UpdateData(size_t offset, const void* data, size_t size) {
 
 void CodeBuffer::Align() {
   byte* end = AlignUp(cursor_, 4);
-  VIXL_ASSERT(end >= cursor_);
   const size_t padding_size = end - cursor_;
-  VIXL_ASSERT(HasSpaceFor(padding_size));
   VIXL_ASSERT(padding_size <= 4);
-  const byte padding[] = {0, 0, 0, 0};
+  EnsureSpaceFor(padding_size);
   dirty_ = true;
-  memcpy(cursor_, padding, padding_size);
+  memset(cursor_, 0, padding_size);
   cursor_ = end;
 }
 
@@ -120,11 +139,12 @@ void CodeBuffer::Reset() {
 void CodeBuffer::Grow(size_t new_capacity) {
   VIXL_ASSERT(managed_);
   VIXL_ASSERT(new_capacity > capacity_);
-  size_t size = GetCursorOffset();
-  buffer_ = static_cast<byte*>(realloc(buffer_, new_capacity));
-  VIXL_CHECK(buffer_ != NULL);
+  ptrdiff_t cursor_offset = GetCursorOffset();
+  buffer_ = static_cast<byte*>(
+      mremap(buffer_, capacity_, new_capacity, MREMAP_MAYMOVE));
+  VIXL_CHECK(buffer_ != MAP_FAILED);
 
-  cursor_ = buffer_ + size;
+  cursor_ = buffer_ + cursor_offset;
   capacity_ = new_capacity;
 }
 

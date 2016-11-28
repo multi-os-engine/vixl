@@ -27,14 +27,14 @@
 #ifndef VIXL_AARCH64_SIMULATOR_AARCH64_H_
 #define VIXL_AARCH64_SIMULATOR_AARCH64_H_
 
-#include "globals-vixl.h"
-#include "utils-vixl.h"
+#include "../globals-vixl.h"
+#include "../utils-vixl.h"
 
-#include "aarch64/abi-aarch64.h"
-#include "aarch64/disasm-aarch64.h"
-#include "aarch64/instructions-aarch64.h"
-#include "aarch64/instrument-aarch64.h"
-#include "aarch64/simulator-constants-aarch64.h"
+#include "abi-aarch64.h"
+#include "disasm-aarch64.h"
+#include "instructions-aarch64.h"
+#include "instrument-aarch64.h"
+#include "simulator-constants-aarch64.h"
 
 #ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 
@@ -359,7 +359,8 @@ typedef SimRegisterBase<kQRegSizeInBytes> SimVRegister;  // v0-v31
 // and additional information to represent lane state.
 class LogicVRegister {
  public:
-  inline LogicVRegister(SimVRegister& other)  // NOLINT
+  inline LogicVRegister(
+      SimVRegister& other)  // NOLINT(runtime/references)(runtime/explicit)
       : register_(other) {
     for (unsigned i = 0; i < sizeof(saturated_) / sizeof(saturated_[0]); i++) {
       saturated_[i] = kNotSaturated;
@@ -413,12 +414,15 @@ class LogicVRegister {
     return element;
   }
 
-  int64_t IntLeftJustified(VectorFormat vform, int index) const {
-    return Int(vform, index) << (64 - LaneSizeInBitsFromFormat(vform));
-  }
-
   uint64_t UintLeftJustified(VectorFormat vform, int index) const {
     return Uint(vform, index) << (64 - LaneSizeInBitsFromFormat(vform));
+  }
+
+  int64_t IntLeftJustified(VectorFormat vform, int index) const {
+    uint64_t value = UintLeftJustified(vform, index);
+    int64_t result;
+    memcpy(&result, &value, sizeof(result));
+    return result;
   }
 
   void SetInt(VectorFormat vform, int index, int64_t value) const {
@@ -441,6 +445,13 @@ class LogicVRegister {
     }
   }
 
+  void SetIntArray(VectorFormat vform, const int64_t* src) const {
+    ClearForWrite(vform);
+    for (int i = 0; i < LaneCountFromFormat(vform); i++) {
+      SetInt(vform, i, src[i]);
+    }
+  }
+
   void SetUint(VectorFormat vform, int index, uint64_t value) const {
     switch (LaneSizeInBitsFromFormat(vform)) {
       case 8:
@@ -458,6 +469,13 @@ class LogicVRegister {
       default:
         VIXL_UNREACHABLE();
         return;
+    }
+  }
+
+  void SetUintArray(VectorFormat vform, const uint64_t* src) const {
+    ClearForWrite(vform);
+    for (int i = 0; i < LaneCountFromFormat(vform); i++) {
+      SetUint(vform, i, src[i]);
     }
   }
 
@@ -591,7 +609,7 @@ class LogicVRegister {
   // Round lanes of a vector based on rounding state.
   LogicVRegister& Round(VectorFormat vform) {
     for (int i = 0; i < LaneCountFromFormat(vform); i++) {
-      SetInt(vform, i, Int(vform, i) + (GetRounding(i) ? 1 : 0));
+      SetUint(vform, i, Uint(vform, i) + (GetRounding(i) ? 1 : 0));
     }
     return *this;
   }
@@ -812,12 +830,14 @@ class Simulator : public DecoderVisitor {
   }
 
 // Declare all Visitor functions.
-#define DECLARE(A) virtual void Visit##A(const Instruction* instr);
+#define DECLARE(A) \
+  virtual void Visit##A(const Instruction* instr) VIXL_OVERRIDE;
   VISITOR_LIST_THAT_RETURN(DECLARE)
 #undef DECLARE
 
-#define DECLARE(A) \
-  VIXL_DEBUG_NO_RETURN virtual void Visit##A(const Instruction* instr);
+#define DECLARE(A)                                                     \
+  VIXL_DEBUG_NO_RETURN virtual void Visit##A(const Instruction* instr) \
+      VIXL_OVERRIDE;
   VISITOR_LIST_THAT_DONT_RETURN(DECLARE)
 #undef DECLARE
 
@@ -2211,8 +2231,8 @@ class Simulator : public DecoderVisitor {
                       const LogicVRegister& src2);
   LogicVRegister sminmaxp(VectorFormat vform,
                           LogicVRegister dst,
-                          int dst_index,
-                          const LogicVRegister& src,
+                          const LogicVRegister& src1,
+                          const LogicVRegister& src2,
                           bool max);
   LogicVRegister smaxp(VectorFormat vform,
                        LogicVRegister dst,
@@ -2278,6 +2298,14 @@ class Simulator : public DecoderVisitor {
                      const LogicVRegister& tab3,
                      const LogicVRegister& tab4,
                      const LogicVRegister& ind);
+  LogicVRegister Table(VectorFormat vform,
+                       LogicVRegister dst,
+                       const LogicVRegister& ind,
+                       bool zero_out_of_bounds,
+                       const LogicVRegister* tab1,
+                       const LogicVRegister* tab2 = NULL,
+                       const LogicVRegister* tab3 = NULL,
+                       const LogicVRegister* tab4 = NULL);
   LogicVRegister tbx(VectorFormat vform,
                      LogicVRegister dst,
                      const LogicVRegister& tab,
@@ -2379,8 +2407,8 @@ class Simulator : public DecoderVisitor {
                       const LogicVRegister& src2);
   LogicVRegister uminmaxp(VectorFormat vform,
                           LogicVRegister dst,
-                          int dst_index,
-                          const LogicVRegister& src,
+                          const LogicVRegister& src1,
+                          const LogicVRegister& src2,
                           bool max);
   LogicVRegister umaxp(VectorFormat vform,
                        LogicVRegister dst,

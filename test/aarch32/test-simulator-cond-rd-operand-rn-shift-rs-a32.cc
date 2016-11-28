@@ -51,7 +51,7 @@
 
 #define SETUP() MacroAssembler masm(BUF_SIZE)
 
-#define START() masm.GetBuffer().Reset()
+#define START() masm.GetBuffer()->Reset()
 
 #define END() \
   __ Hlt(0);  \
@@ -66,17 +66,17 @@
 
 #define SETUP() MacroAssembler masm(BUF_SIZE);
 
-#define START()             \
-  masm.GetBuffer().Reset(); \
-  __ Push(r4);              \
-  __ Push(r5);              \
-  __ Push(r6);              \
-  __ Push(r7);              \
-  __ Push(r8);              \
-  __ Push(r9);              \
-  __ Push(r10);             \
-  __ Push(r11);             \
-  __ Push(r12);             \
+#define START()              \
+  masm.GetBuffer()->Reset(); \
+  __ Push(r4);               \
+  __ Push(r5);               \
+  __ Push(r6);               \
+  __ Push(r7);               \
+  __ Push(r8);               \
+  __ Push(r9);               \
+  __ Push(r10);              \
+  __ Push(r11);              \
+  __ Push(r12);              \
   __ Push(lr)
 
 #define END()  \
@@ -93,15 +93,14 @@
   __ Bx(lr);   \
   __ FinalizeCode();
 
-// Copy the generated code into a memory area garanteed to be executable before
-// executing it.
-#define RUN()                                                  \
-  {                                                            \
-    ExecutableMemory code(masm.GetBuffer().GetCursorOffset()); \
-    code.Write(masm.GetBuffer().GetOffsetAddress<byte*>(0),    \
-               masm.GetBuffer().GetCursorOffset());            \
-    int pcs_offset = masm.IsUsingT32() ? 1 : 0;                \
-    code.Execute(pcs_offset);                                  \
+#define RUN()                                                 \
+  {                                                           \
+    int pcs_offset = masm.IsUsingT32() ? 1 : 0;               \
+    masm.GetBuffer()->SetExecutable();                        \
+    ExecuteMemory(masm.GetBuffer()->GetStartAddress<byte*>(), \
+                  masm.GetSizeOfCodeGenerated(),              \
+                  pcs_offset);                                \
+    masm.GetBuffer()->SetWritable();                          \
   }
 
 #define TEARDOWN()
@@ -122,6 +121,15 @@ namespace aarch32 {
   M(Teq)                       \
   M(Tst)
 
+
+// The following definitions are defined again in each generated test, therefore
+// we need to place them in an anomymous namespace. It expresses that they are
+// local to this file only, and the compiler is not allowed to share these types
+// across test files during template instantiation. Specifically, `Operands` and
+// `Inputs` have various layouts across generated tests so they absolutely
+// cannot be shared.
+
+namespace {
 
 // Values to be passed to the assembler to produce the instruction under test.
 struct Operands {
@@ -1430,221 +1438,221 @@ static const Inputs kShiftTypes[] = {{NoFlag, 0xabababab, 0x00000000, 0},
 
 
 // A loop will be generated for each element of this array.
-static const TestLoopData kTests[] = {{{eq, r0, r0, LSL, r0},
-                                       "eq r0 r0 LSL r0",
-                                       "Condition_eq_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{ne, r0, r0, LSL, r0},
-                                       "ne r0 r0 LSL r0",
-                                       "Condition_ne_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{cs, r0, r0, LSL, r0},
-                                       "cs r0 r0 LSL r0",
-                                       "Condition_cs_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{cc, r0, r0, LSL, r0},
-                                       "cc r0 r0 LSL r0",
-                                       "Condition_cc_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{mi, r0, r0, LSL, r0},
-                                       "mi r0 r0 LSL r0",
-                                       "Condition_mi_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{pl, r0, r0, LSL, r0},
-                                       "pl r0 r0 LSL r0",
-                                       "Condition_pl_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{vs, r0, r0, LSL, r0},
-                                       "vs r0 r0 LSL r0",
-                                       "Condition_vs_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{vc, r0, r0, LSL, r0},
-                                       "vc r0 r0 LSL r0",
-                                       "Condition_vc_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{hi, r0, r0, LSL, r0},
-                                       "hi r0 r0 LSL r0",
-                                       "Condition_hi_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{ls, r0, r0, LSL, r0},
-                                       "ls r0 r0 LSL r0",
-                                       "Condition_ls_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{ge, r0, r0, LSL, r0},
-                                       "ge r0 r0 LSL r0",
-                                       "Condition_ge_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{lt, r0, r0, LSL, r0},
-                                       "lt r0 r0 LSL r0",
-                                       "Condition_lt_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{gt, r0, r0, LSL, r0},
-                                       "gt r0 r0 LSL r0",
-                                       "Condition_gt_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{le, r0, r0, LSL, r0},
-                                       "le r0 r0 LSL r0",
-                                       "Condition_le_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{al, r0, r0, LSL, r0},
-                                       "al r0 r0 LSL r0",
-                                       "Condition_al_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kCondition),
-                                       kCondition},
-                                      {{al, r0, r0, LSL, r0},
-                                       "al r0 r0 LSL r0",
-                                       "RdIsRn_al_r0_r0_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r1, r1, LSL, r0},
-                                       "al r1 r1 LSL r0",
-                                       "RdIsRn_al_r1_r1_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r2, r2, LSL, r0},
-                                       "al r2 r2 LSL r0",
-                                       "RdIsRn_al_r2_r2_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r3, r3, LSL, r0},
-                                       "al r3 r3 LSL r0",
-                                       "RdIsRn_al_r3_r3_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r4, r4, LSL, r0},
-                                       "al r4 r4 LSL r0",
-                                       "RdIsRn_al_r4_r4_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r5, r5, LSL, r0},
-                                       "al r5 r5 LSL r0",
-                                       "RdIsRn_al_r5_r5_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r6, r6, LSL, r0},
-                                       "al r6 r6 LSL r0",
-                                       "RdIsRn_al_r6_r6_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r7, r7, LSL, r0},
-                                       "al r7 r7 LSL r0",
-                                       "RdIsRn_al_r7_r7_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r8, r8, LSL, r0},
-                                       "al r8 r8 LSL r0",
-                                       "RdIsRn_al_r8_r8_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r9, r9, LSL, r0},
-                                       "al r9 r9 LSL r0",
-                                       "RdIsRn_al_r9_r9_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r10, r10, LSL, r0},
-                                       "al r10 r10 LSL r0",
-                                       "RdIsRn_al_r10_r10_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r11, r11, LSL, r0},
-                                       "al r11 r11 LSL r0",
-                                       "RdIsRn_al_r11_r11_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r12, r12, LSL, r0},
-                                       "al r12 r12 LSL r0",
-                                       "RdIsRn_al_r12_r12_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r14, r14, LSL, r0},
-                                       "al r14 r14 LSL r0",
-                                       "RdIsRn_al_r14_r14_LSL_r0",
-                                       ARRAY_SIZE(kRdIsRn),
-                                       kRdIsRn},
-                                      {{al, r1, r8, LSL, r0},
-                                       "al r1 r8 LSL r0",
-                                       "RdIsNotRn_al_r1_r8_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r7, r4, LSL, r0},
-                                       "al r7 r4 LSL r0",
-                                       "RdIsNotRn_al_r7_r4_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r14, r10, LSL, r0},
-                                       "al r14 r10 LSL r0",
-                                       "RdIsNotRn_al_r14_r10_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r10, r6, LSL, r0},
-                                       "al r10 r6 LSL r0",
-                                       "RdIsNotRn_al_r10_r6_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r6, r5, LSL, r0},
-                                       "al r6 r5 LSL r0",
-                                       "RdIsNotRn_al_r6_r5_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r12, r2, LSL, r0},
-                                       "al r12 r2 LSL r0",
-                                       "RdIsNotRn_al_r12_r2_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r0, r11, LSL, r0},
-                                       "al r0 r11 LSL r0",
-                                       "RdIsNotRn_al_r0_r11_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r10, r14, LSL, r0},
-                                       "al r10 r14 LSL r0",
-                                       "RdIsNotRn_al_r10_r14_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r0, r5, LSL, r0},
-                                       "al r0 r5 LSL r0",
-                                       "RdIsNotRn_al_r0_r5_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r0, r3, LSL, r0},
-                                       "al r0 r3 LSL r0",
-                                       "RdIsNotRn_al_r0_r3_LSL_r0",
-                                       ARRAY_SIZE(kRdIsNotRn),
-                                       kRdIsNotRn},
-                                      {{al, r0, r1, LSL, r2},
-                                       "al r0 r1 LSL r2",
-                                       "ShiftTypes_al_r0_r1_LSL_r2",
-                                       ARRAY_SIZE(kShiftTypes),
-                                       kShiftTypes},
-                                      {{al, r0, r1, LSR, r2},
-                                       "al r0 r1 LSR r2",
-                                       "ShiftTypes_al_r0_r1_LSR_r2",
-                                       ARRAY_SIZE(kShiftTypes),
-                                       kShiftTypes},
-                                      {{al, r0, r1, ASR, r2},
-                                       "al r0 r1 ASR r2",
-                                       "ShiftTypes_al_r0_r1_ASR_r2",
-                                       ARRAY_SIZE(kShiftTypes),
-                                       kShiftTypes},
-                                      {{al, r0, r1, ROR, r2},
-                                       "al r0 r1 ROR r2",
-                                       "ShiftTypes_al_r0_r1_ROR_r2",
-                                       ARRAY_SIZE(kShiftTypes),
-                                       kShiftTypes}};
+const TestLoopData kTests[] = {{{eq, r0, r0, LSL, r0},
+                                "eq r0 r0 LSL r0",
+                                "Condition_eq_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{ne, r0, r0, LSL, r0},
+                                "ne r0 r0 LSL r0",
+                                "Condition_ne_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{cs, r0, r0, LSL, r0},
+                                "cs r0 r0 LSL r0",
+                                "Condition_cs_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{cc, r0, r0, LSL, r0},
+                                "cc r0 r0 LSL r0",
+                                "Condition_cc_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{mi, r0, r0, LSL, r0},
+                                "mi r0 r0 LSL r0",
+                                "Condition_mi_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{pl, r0, r0, LSL, r0},
+                                "pl r0 r0 LSL r0",
+                                "Condition_pl_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{vs, r0, r0, LSL, r0},
+                                "vs r0 r0 LSL r0",
+                                "Condition_vs_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{vc, r0, r0, LSL, r0},
+                                "vc r0 r0 LSL r0",
+                                "Condition_vc_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{hi, r0, r0, LSL, r0},
+                                "hi r0 r0 LSL r0",
+                                "Condition_hi_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{ls, r0, r0, LSL, r0},
+                                "ls r0 r0 LSL r0",
+                                "Condition_ls_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{ge, r0, r0, LSL, r0},
+                                "ge r0 r0 LSL r0",
+                                "Condition_ge_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{lt, r0, r0, LSL, r0},
+                                "lt r0 r0 LSL r0",
+                                "Condition_lt_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{gt, r0, r0, LSL, r0},
+                                "gt r0 r0 LSL r0",
+                                "Condition_gt_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{le, r0, r0, LSL, r0},
+                                "le r0 r0 LSL r0",
+                                "Condition_le_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{al, r0, r0, LSL, r0},
+                                "al r0 r0 LSL r0",
+                                "Condition_al_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kCondition),
+                                kCondition},
+                               {{al, r0, r0, LSL, r0},
+                                "al r0 r0 LSL r0",
+                                "RdIsRn_al_r0_r0_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r1, r1, LSL, r0},
+                                "al r1 r1 LSL r0",
+                                "RdIsRn_al_r1_r1_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r2, r2, LSL, r0},
+                                "al r2 r2 LSL r0",
+                                "RdIsRn_al_r2_r2_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r3, r3, LSL, r0},
+                                "al r3 r3 LSL r0",
+                                "RdIsRn_al_r3_r3_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r4, r4, LSL, r0},
+                                "al r4 r4 LSL r0",
+                                "RdIsRn_al_r4_r4_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r5, r5, LSL, r0},
+                                "al r5 r5 LSL r0",
+                                "RdIsRn_al_r5_r5_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r6, r6, LSL, r0},
+                                "al r6 r6 LSL r0",
+                                "RdIsRn_al_r6_r6_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r7, r7, LSL, r0},
+                                "al r7 r7 LSL r0",
+                                "RdIsRn_al_r7_r7_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r8, r8, LSL, r0},
+                                "al r8 r8 LSL r0",
+                                "RdIsRn_al_r8_r8_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r9, r9, LSL, r0},
+                                "al r9 r9 LSL r0",
+                                "RdIsRn_al_r9_r9_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r10, r10, LSL, r0},
+                                "al r10 r10 LSL r0",
+                                "RdIsRn_al_r10_r10_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r11, r11, LSL, r0},
+                                "al r11 r11 LSL r0",
+                                "RdIsRn_al_r11_r11_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r12, r12, LSL, r0},
+                                "al r12 r12 LSL r0",
+                                "RdIsRn_al_r12_r12_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r14, r14, LSL, r0},
+                                "al r14 r14 LSL r0",
+                                "RdIsRn_al_r14_r14_LSL_r0",
+                                ARRAY_SIZE(kRdIsRn),
+                                kRdIsRn},
+                               {{al, r1, r8, LSL, r0},
+                                "al r1 r8 LSL r0",
+                                "RdIsNotRn_al_r1_r8_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r7, r4, LSL, r0},
+                                "al r7 r4 LSL r0",
+                                "RdIsNotRn_al_r7_r4_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r14, r10, LSL, r0},
+                                "al r14 r10 LSL r0",
+                                "RdIsNotRn_al_r14_r10_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r10, r6, LSL, r0},
+                                "al r10 r6 LSL r0",
+                                "RdIsNotRn_al_r10_r6_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r6, r5, LSL, r0},
+                                "al r6 r5 LSL r0",
+                                "RdIsNotRn_al_r6_r5_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r12, r2, LSL, r0},
+                                "al r12 r2 LSL r0",
+                                "RdIsNotRn_al_r12_r2_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r0, r11, LSL, r0},
+                                "al r0 r11 LSL r0",
+                                "RdIsNotRn_al_r0_r11_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r10, r14, LSL, r0},
+                                "al r10 r14 LSL r0",
+                                "RdIsNotRn_al_r10_r14_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r0, r5, LSL, r0},
+                                "al r0 r5 LSL r0",
+                                "RdIsNotRn_al_r0_r5_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r0, r3, LSL, r0},
+                                "al r0 r3 LSL r0",
+                                "RdIsNotRn_al_r0_r3_LSL_r0",
+                                ARRAY_SIZE(kRdIsNotRn),
+                                kRdIsNotRn},
+                               {{al, r0, r1, LSL, r2},
+                                "al r0 r1 LSL r2",
+                                "ShiftTypes_al_r0_r1_LSL_r2",
+                                ARRAY_SIZE(kShiftTypes),
+                                kShiftTypes},
+                               {{al, r0, r1, LSR, r2},
+                                "al r0 r1 LSR r2",
+                                "ShiftTypes_al_r0_r1_LSR_r2",
+                                ARRAY_SIZE(kShiftTypes),
+                                kShiftTypes},
+                               {{al, r0, r1, ASR, r2},
+                                "al r0 r1 ASR r2",
+                                "ShiftTypes_al_r0_r1_ASR_r2",
+                                ARRAY_SIZE(kShiftTypes),
+                                kShiftTypes},
+                               {{al, r0, r1, ROR, r2},
+                                "al r0 r1 ROR r2",
+                                "ShiftTypes_al_r0_r1_ROR_r2",
+                                ARRAY_SIZE(kShiftTypes),
+                                kShiftTypes}};
 
 // We record all inputs to the instructions as outputs. This way, we also check
 // that what shouldn't change didn't change.
@@ -1666,15 +1674,15 @@ struct TestResult {
 
 
 // The maximum number of errors to report in detail for each test.
-static const unsigned kErrorReportLimit = 8;
+const unsigned kErrorReportLimit = 8;
 
 typedef void (MacroAssembler::*Fn)(Condition cond,
                                    Register rd,
                                    const Operand& op);
 
-static void TestHelper(Fn instruction,
-                       const char* mnemonic,
-                       const TestResult reference[]) {
+void TestHelper(Fn instruction,
+                const char* mnemonic,
+                const TestResult reference[]) {
   SETUP();
   masm.UseA32();
   START();
@@ -1694,8 +1702,8 @@ static void TestHelper(Fn instruction,
     results[i]->outputs = new Inputs[kTests[i].input_size];
     results[i]->output_size = kTests[i].input_size;
 
-    uintptr_t input_address = reinterpret_cast<uintptr_t>(kTests[i].inputs);
-    uintptr_t result_address = reinterpret_cast<uintptr_t>(results[i]->outputs);
+    size_t input_stride = sizeof(kTests[i].inputs[0]) * kTests[i].input_size;
+    VIXL_ASSERT(IsUint32(input_stride));
 
     scratch_memory_buffers[i] = NULL;
 
@@ -1722,11 +1730,9 @@ static void TestHelper(Fn instruction,
 
     // Initialize `input_ptr` to the first element and `input_end` the address
     // after the array.
-    __ Mov(input_ptr, input_address);
-    __ Add(input_end,
-           input_ptr,
-           sizeof(kTests[i].inputs[0]) * kTests[i].input_size);
-    __ Mov(result_ptr, result_address);
+    __ Mov(input_ptr, Operand::From(kTests[i].inputs));
+    __ Add(input_end, input_ptr, static_cast<uint32_t>(input_stride));
+    __ Mov(result_ptr, Operand::From(results[i]->outputs));
     __ Bind(&loop);
 
     {
@@ -1760,9 +1766,9 @@ static void TestHelper(Fn instruction,
     __ Str(rs, MemOperand(result_ptr, offsetof(Inputs, rs)));
 
     // Advance the result pointer.
-    __ Add(result_ptr, result_ptr, sizeof(kTests[i].inputs[0]));
+    __ Add(result_ptr, result_ptr, Operand::From(sizeof(kTests[i].inputs[0])));
     // Loop back until `input_ptr` is lower than `input_base`.
-    __ Add(input_ptr, input_ptr, sizeof(kTests[i].inputs[0]));
+    __ Add(input_ptr, input_ptr, Operand::From(sizeof(kTests[i].inputs[0])));
     __ Cmp(input_ptr, input_end);
     __ B(ne, &loop);
   }
@@ -1774,7 +1780,7 @@ static void TestHelper(Fn instruction,
   if (Test::generate_test_trace()) {
     // Print the results.
     for (size_t i = 0; i < ARRAY_SIZE(kTests); i++) {
-      printf("static const Inputs kOutputs_%s_%s[] = {\n",
+      printf("const Inputs kOutputs_%s_%s[] = {\n",
              mnemonic,
              kTests[i].identifier);
       for (size_t j = 0; j < results[i]->output_size; j++) {
@@ -1790,7 +1796,7 @@ static void TestHelper(Fn instruction,
       }
       printf("};\n");
     }
-    printf("static const TestResult kReference%s[] = {\n", mnemonic);
+    printf("const TestResult kReference%s[] = {\n", mnemonic);
     for (size_t i = 0; i < ARRAY_SIZE(kTests); i++) {
       printf("  {\n");
       printf("    ARRAY_SIZE(kOutputs_%s_%s),\n",
@@ -1880,15 +1886,30 @@ static void TestHelper(Fn instruction,
 }
 
 // Instantiate tests for each instruction in the list.
+// TODO: Remove this limitation by having a sandboxing mechanism.
+#if defined(VIXL_HOST_POINTER_32)
 #define TEST(mnemonic)                                                      \
-  static void Test_##mnemonic() {                                           \
+  void Test_##mnemonic() {                                                  \
     TestHelper(&MacroAssembler::mnemonic, #mnemonic, kReference##mnemonic); \
   }                                                                         \
-  static Test test_##mnemonic(                                              \
+  Test test_##mnemonic(                                                     \
       "AARCH32_SIMULATOR_COND_RD_OPERAND_RN_SHIFT_RS_A32_" #mnemonic,       \
       &Test_##mnemonic);
+#else
+#define TEST(mnemonic)                                                \
+  void Test_##mnemonic() {                                            \
+    VIXL_WARNING("This test can only run on a 32-bit host.\n");       \
+    USE(TestHelper);                                                  \
+  }                                                                   \
+  Test test_##mnemonic(                                               \
+      "AARCH32_SIMULATOR_COND_RD_OPERAND_RN_SHIFT_RS_A32_" #mnemonic, \
+      &Test_##mnemonic);
+#endif
+
 FOREACH_INSTRUCTION(TEST)
 #undef TEST
 
-}  // aarch32
-}  // vixl
+}  // namespace
+
+}  // namespace aarch32
+}  // namespace vixl

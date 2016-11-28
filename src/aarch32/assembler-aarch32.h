@@ -27,7 +27,7 @@
 #ifndef VIXL_AARCH32_ASSEMBLER_AARCH32_H_
 #define VIXL_AARCH32_ASSEMBLER_AARCH32_H_
 
-#include "code-buffer-vixl.h"
+#include "assembler-base-vixl.h"
 
 #include "aarch32/instructions-aarch32.h"
 #include "aarch32/label-aarch32.h"
@@ -35,7 +35,7 @@
 namespace vixl {
 namespace aarch32 {
 
-class Assembler {
+class Assembler : public internal::AssemblerBase {
   InstructionSet isa_;
   Condition first_condition_;
   uint16_t it_mask_;
@@ -44,8 +44,6 @@ class Assembler {
   bool allow_assembler_;
 
  protected:
-  CodeBuffer buffer_;
-
   void EmitT32_16(uint16_t instr);
   void EmitT32_32(uint32_t instr);
   void EmitA32(uint32_t instr);
@@ -62,6 +60,14 @@ class Assembler {
   void PerformCheckIT(Condition condition);
 #endif
   void AdvanceIT() { it_mask_ = (it_mask_ << 1) & 0xf; }
+  void BindHelper(Label* label);
+  void PlaceHelper(RawLiteral* literal) {
+    BindHelper(literal);
+    GetBuffer()->EmitData(literal->GetDataAddress(), literal->GetSize());
+  }
+  uint32_t Link(uint32_t instr,
+                Label* label,
+                const Label::LabelEmitOperator& op);
 
  public:
   explicit Assembler(InstructionSet isa = A32)
@@ -70,20 +76,20 @@ class Assembler {
         it_mask_(0),
         has_32_dregs_(true),
         allow_assembler_(true) {}
-  explicit Assembler(size_t size, InstructionSet isa = A32)
-      : isa_(isa),
+  explicit Assembler(size_t capacity, InstructionSet isa = A32)
+      : AssemblerBase(capacity),
+        isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
-        allow_assembler_(true),
-        buffer_(size) {}
-  Assembler(void* buffer, size_t size, InstructionSet isa = A32)
-      : isa_(isa),
+        allow_assembler_(true) {}
+  Assembler(byte* buffer, size_t capacity, InstructionSet isa = A32)
+      : AssemblerBase(buffer, capacity),
+        isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
-        allow_assembler_(true),
-        buffer_(buffer, size) {}
+        allow_assembler_(true) {}
   virtual ~Assembler() {}
   void UseInstructionSet(InstructionSet isa) {
     VIXL_ASSERT((isa_ == isa) || (GetCursorOffset() == 0));
@@ -117,39 +123,28 @@ class Assembler {
   bool Has32DRegs() const { return has_32_dregs_; }
   void SetHas32DRegs(bool has_32_dregs) { has_32_dregs_ = has_32_dregs; }
 
-  CodeBuffer& GetBuffer() { return buffer_; }
-  uint32_t GetCursorOffset() const { return buffer_.GetCursorOffset(); }
-  // Return the address of an offset in the buffer.
-  template <typename T>
-  T GetOffsetAddress(ptrdiff_t offset) const {
-    VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
-    return buffer_.GetOffsetAddress<T>(offset);
+  int32_t GetCursorOffset() const {
+    ptrdiff_t offset = buffer_.GetCursorOffset();
+    VIXL_ASSERT(IsInt32(offset));
+    return static_cast<int32_t>(offset);
   }
+
   uint32_t GetArchitectureStatePCOffset() const { return IsUsingT32() ? 4 : 8; }
-  // Return the address of the start of the buffer.
-  template <typename T>
-  T GetStartAddress() const {
-    VIXL_STATIC_ASSERT(sizeof(T) >= sizeof(uintptr_t));
-    return GetOffsetAddress<T>(0);
+  void bind(Label* label) {
+    VIXL_ASSERT(AllowAssembler());
+    BindHelper(label);
   }
-  void EncodeLabelFor(const Label::ForwardReference& forward, Label* label);
-  uint32_t Link(uint32_t instr,
-                Label* label,
-                const Label::LabelEmitOperator& op);
-  void bind(Label* label);
   void place(RawLiteral* literal) {
-    bind(literal);
-    GetBuffer().EmitData(literal->GetDataAddress(), literal->GetSize());
-    GetBuffer().Align();
+    VIXL_ASSERT(AllowAssembler());
+    PlaceHelper(literal);
   }
-  void FinalizeCode() { GetBuffer().SetClean(); }
 
   size_t GetSizeOfCodeGeneratedSince(Label* label) const {
     VIXL_ASSERT(label->IsBound());
     return buffer_.GetOffsetFrom(label->GetLocation());
   }
 
-  size_t GetSizeOfCodeGenerated() const { return buffer_.GetOffsetFrom(0); }
+  void EncodeLabelFor(const Label::ForwardReference& forward, Label* label);
 
   // Helpers for it instruction.
   void it(Condition cond) { it(cond, 0x8); }
@@ -169,412 +164,6 @@ class Assembler {
   void iteee(Condition cond) { it(cond, 0xf); }
 
   // Start of generated code.
-  enum InstructionType {
-    kAdc,
-    kAdcs,
-    kAdd,
-    kAdds,
-    kAddw,
-    kAdr,
-    kAnd,
-    kAnds,
-    kAsr,
-    kAsrs,
-    kB,
-    kBfc,
-    kBfi,
-    kBic,
-    kBics,
-    kBkpt,
-    kBl,
-    kBlx,
-    kBx,
-    kBxj,
-    kCbnz,
-    kCbz,
-    kClrex,
-    kClz,
-    kCmn,
-    kCmp,
-    kCrc32b,
-    kCrc32cb,
-    kCrc32ch,
-    kCrc32cw,
-    kCrc32h,
-    kCrc32w,
-    kDmb,
-    kDsb,
-    kEor,
-    kEors,
-    kFldmdbx,
-    kFldmiax,
-    kFstmdbx,
-    kFstmiax,
-    kHlt,
-    kHvc,
-    kIsb,
-    kIt,
-    kLda,
-    kLdab,
-    kLdaex,
-    kLdaexb,
-    kLdaexd,
-    kLdaexh,
-    kLdah,
-    kLdm,
-    kLdmda,
-    kLdmdb,
-    kLdmea,
-    kLdmed,
-    kLdmfa,
-    kLdmfd,
-    kLdmib,
-    kLdr,
-    kLdrb,
-    kLdrd,
-    kLdrex,
-    kLdrexb,
-    kLdrexd,
-    kLdrexh,
-    kLdrh,
-    kLdrsb,
-    kLdrsh,
-    kLsl,
-    kLsls,
-    kLsr,
-    kLsrs,
-    kMla,
-    kMlas,
-    kMls,
-    kMov,
-    kMovs,
-    kMovt,
-    kMovw,
-    kMrs,
-    kMsr,
-    kMul,
-    kMuls,
-    kMvn,
-    kMvns,
-    kNop,
-    kOrn,
-    kOrns,
-    kOrr,
-    kOrrs,
-    kPkhbt,
-    kPkhtb,
-    kPld,
-    kPldw,
-    kPli,
-    kPop,
-    kPush,
-    kQadd,
-    kQadd16,
-    kQadd8,
-    kQasx,
-    kQdadd,
-    kQdsub,
-    kQsax,
-    kQsub,
-    kQsub16,
-    kQsub8,
-    kRbit,
-    kRev,
-    kRev16,
-    kRevsh,
-    kRor,
-    kRors,
-    kRrx,
-    kRrxs,
-    kRsb,
-    kRsbs,
-    kRsc,
-    kRscs,
-    kSadd16,
-    kSadd8,
-    kSasx,
-    kSbc,
-    kSbcs,
-    kSbfx,
-    kSdiv,
-    kSel,
-    kShadd16,
-    kShadd8,
-    kShasx,
-    kShsax,
-    kShsub16,
-    kShsub8,
-    kSmlabb,
-    kSmlabt,
-    kSmlad,
-    kSmladx,
-    kSmlal,
-    kSmlalbb,
-    kSmlalbt,
-    kSmlald,
-    kSmlaldx,
-    kSmlals,
-    kSmlaltb,
-    kSmlaltt,
-    kSmlatb,
-    kSmlatt,
-    kSmlawb,
-    kSmlawt,
-    kSmlsd,
-    kSmlsdx,
-    kSmlsld,
-    kSmlsldx,
-    kSmmla,
-    kSmmlar,
-    kSmmls,
-    kSmmlsr,
-    kSmmul,
-    kSmmulr,
-    kSmuad,
-    kSmuadx,
-    kSmulbb,
-    kSmulbt,
-    kSmull,
-    kSmulls,
-    kSmultb,
-    kSmultt,
-    kSmulwb,
-    kSmulwt,
-    kSmusd,
-    kSmusdx,
-    kSsat,
-    kSsat16,
-    kSsax,
-    kSsub16,
-    kSsub8,
-    kStl,
-    kStlb,
-    kStlex,
-    kStlexb,
-    kStlexd,
-    kStlexh,
-    kStlh,
-    kStm,
-    kStmda,
-    kStmdb,
-    kStmea,
-    kStmed,
-    kStmfa,
-    kStmfd,
-    kStmib,
-    kStr,
-    kStrb,
-    kStrd,
-    kStrex,
-    kStrexb,
-    kStrexd,
-    kStrexh,
-    kStrh,
-    kSub,
-    kSubs,
-    kSubw,
-    kSvc,
-    kSxtab,
-    kSxtab16,
-    kSxtah,
-    kSxtb,
-    kSxtb16,
-    kSxth,
-    kTbb,
-    kTbh,
-    kTeq,
-    kTst,
-    kUadd16,
-    kUadd8,
-    kUasx,
-    kUbfx,
-    kUdf,
-    kUdiv,
-    kUhadd16,
-    kUhadd8,
-    kUhasx,
-    kUhsax,
-    kUhsub16,
-    kUhsub8,
-    kUmaal,
-    kUmlal,
-    kUmlals,
-    kUmull,
-    kUmulls,
-    kUqadd16,
-    kUqadd8,
-    kUqasx,
-    kUqsax,
-    kUqsub16,
-    kUqsub8,
-    kUsad8,
-    kUsada8,
-    kUsat,
-    kUsat16,
-    kUsax,
-    kUsub16,
-    kUsub8,
-    kUxtab,
-    kUxtab16,
-    kUxtah,
-    kUxtb,
-    kUxtb16,
-    kUxth,
-    kVaba,
-    kVabal,
-    kVabd,
-    kVabdl,
-    kVabs,
-    kVacge,
-    kVacgt,
-    kVacle,
-    kVaclt,
-    kVadd,
-    kVaddhn,
-    kVaddl,
-    kVaddw,
-    kVand,
-    kVbic,
-    kVbif,
-    kVbit,
-    kVbsl,
-    kVceq,
-    kVcge,
-    kVcgt,
-    kVcle,
-    kVcls,
-    kVclt,
-    kVclz,
-    kVcmp,
-    kVcmpe,
-    kVcnt,
-    kVcvt,
-    kVcvta,
-    kVcvtb,
-    kVcvtm,
-    kVcvtn,
-    kVcvtp,
-    kVcvtr,
-    kVcvtt,
-    kVdiv,
-    kVdup,
-    kVeor,
-    kVext,
-    kVfma,
-    kVfms,
-    kVfnma,
-    kVfnms,
-    kVhadd,
-    kVhsub,
-    kVld1,
-    kVld2,
-    kVld3,
-    kVld4,
-    kVldm,
-    kVldmdb,
-    kVldmia,
-    kVldr,
-    kVmax,
-    kVmaxnm,
-    kVmin,
-    kVminnm,
-    kVmla,
-    kVmlal,
-    kVmls,
-    kVmlsl,
-    kVmov,
-    kVmovl,
-    kVmovn,
-    kVmrs,
-    kVmsr,
-    kVmul,
-    kVmull,
-    kVmvn,
-    kVneg,
-    kVnmla,
-    kVnmls,
-    kVnmul,
-    kVorn,
-    kVorr,
-    kVpadal,
-    kVpadd,
-    kVpaddl,
-    kVpmax,
-    kVpmin,
-    kVpop,
-    kVpush,
-    kVqabs,
-    kVqadd,
-    kVqdmlal,
-    kVqdmlsl,
-    kVqdmulh,
-    kVqdmull,
-    kVqmovn,
-    kVqmovun,
-    kVqneg,
-    kVqrdmulh,
-    kVqrshl,
-    kVqrshrn,
-    kVqrshrun,
-    kVqshl,
-    kVqshlu,
-    kVqshrn,
-    kVqshrun,
-    kVqsub,
-    kVraddhn,
-    kVrecpe,
-    kVrecps,
-    kVrev16,
-    kVrev32,
-    kVrev64,
-    kVrhadd,
-    kVrinta,
-    kVrintm,
-    kVrintn,
-    kVrintp,
-    kVrintr,
-    kVrintx,
-    kVrintz,
-    kVrshl,
-    kVrshr,
-    kVrshrn,
-    kVrsqrte,
-    kVrsqrts,
-    kVrsra,
-    kVrsubhn,
-    kVseleq,
-    kVselge,
-    kVselgt,
-    kVselvs,
-    kVshl,
-    kVshll,
-    kVshr,
-    kVshrn,
-    kVsli,
-    kVsqrt,
-    kVsra,
-    kVsri,
-    kVst1,
-    kVst2,
-    kVst3,
-    kVst4,
-    kVstm,
-    kVstmdb,
-    kVstmia,
-    kVstr,
-    kVsub,
-    kVsubhn,
-    kVsubl,
-    kVsubw,
-    kVswp,
-    kVtbl,
-    kVtbx,
-    kVtrn,
-    kVtst,
-    kVuzp,
-    kVzip,
-    kYield
-  };
   typedef void (Assembler::*InstructionCondSizeRROp)(Condition cond,
                                                      EncodingSize size,
                                                      Register rd,
