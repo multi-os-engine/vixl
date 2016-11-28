@@ -26,7 +26,7 @@
 
 #include <cctype>
 
-#include "aarch64/macro-assembler-aarch64.h"
+#include "macro-assembler-aarch64.h"
 
 namespace vixl {
 namespace aarch64 {
@@ -90,6 +90,23 @@ void LiteralPool::CheckEmitFor(size_t amount, EmitOption option) {
 }
 
 
+// We use a subclass to access the protected `ExactAssemblyScope` constructor
+// giving us control over the pools. This allows us to use this scope within
+// code emitting pools without creating a circular dependency.
+// We keep the constructor private to restrict usage of this helper class.
+class ExactAssemblyScopeWithoutPoolsCheck : public ExactAssemblyScope {
+ private:
+  ExactAssemblyScopeWithoutPoolsCheck(MacroAssembler* masm, size_t size)
+      : ExactAssemblyScope(masm,
+                           size,
+                           ExactAssemblyScope::kExactSize,
+                           ExactAssemblyScope::kIgnorePools) {}
+
+  friend void LiteralPool::Emit(LiteralPool::EmitOption);
+  friend void VeneerPool::Emit(VeneerPool::EmitOption, size_t);
+};
+
+
 void LiteralPool::Emit(EmitOption option) {
   // There is an issue if we are asked to emit a blocked or empty pool.
   VIXL_ASSERT(!IsBlocked());
@@ -111,20 +128,14 @@ void LiteralPool::Emit(EmitOption option) {
     masm_->SetAllowMacroInstructions(false);
 #endif
     if (option == kBranchRequired) {
-      InstructionAccurateScope guard(masm_,
-                                     1,
-                                     CodeBufferCheckScope::kExactSize,
-                                     EmissionCheckScope::kIgnorePools);
+      ExactAssemblyScopeWithoutPoolsCheck guard(masm_, kInstructionSize);
       masm_->b(&end_of_pool);
     }
 
     {
       // Marker indicating the size of the literal pool in 32-bit words.
       VIXL_ASSERT((pool_size % kWRegSizeInBytes) == 0);
-      InstructionAccurateScope guard(masm_,
-                                     1,
-                                     CodeBufferCheckScope::kExactSize,
-                                     EmissionCheckScope::kIgnorePools);
+      ExactAssemblyScopeWithoutPoolsCheck guard(masm_, kInstructionSize);
       masm_->ldr(xzr, static_cast<int>(pool_size / kWRegSizeInBytes));
     }
 
@@ -250,10 +261,7 @@ void VeneerPool::Emit(EmitOption option, size_t amount) {
 
   Label end;
   if (option == kBranchRequired) {
-    InstructionAccurateScope guard(masm_,
-                                   1,
-                                   CodeBufferCheckScope::kExactSize,
-                                   EmissionCheckScope::kIgnorePools);
+    ExactAssemblyScopeWithoutPoolsCheck guard(masm_, kInstructionSize);
     masm_->b(&end);
   }
 
@@ -279,10 +287,7 @@ void VeneerPool::Emit(EmitOption option, size_t amount) {
       Instruction* veneer = masm_->GetCursorAddress<Instruction*>();
       branch->SetImmPCOffsetTarget(veneer);
       {
-        InstructionAccurateScope guard(masm_,
-                                       1,
-                                       CodeBufferCheckScope::kExactSize,
-                                       EmissionCheckScope::kIgnorePools);
+        ExactAssemblyScopeWithoutPoolsCheck guard(masm_, kInstructionSize);
         masm_->b(label);
       }
 
@@ -298,59 +303,6 @@ void VeneerPool::Emit(EmitOption option, size_t amount) {
   UpdateNextCheckPoint();
 
   masm_->bind(&end);
-}
-
-
-EmissionCheckScope::EmissionCheckScope(MacroAssembler* masm,
-                                       size_t size,
-                                       AssertPolicy assert_policy) {
-  Open(masm, size, assert_policy);
-}
-
-
-EmissionCheckScope::~EmissionCheckScope() { Close(); }
-
-
-EmissionCheckScope::EmissionCheckScope(MacroAssembler* masm,
-                                       size_t size,
-                                       AssertPolicy assert_policy,
-                                       PoolPolicy pool_policy) {
-  Open(masm, size, assert_policy, pool_policy);
-}
-
-
-void EmissionCheckScope::Open(MacroAssembler* masm,
-                              size_t size,
-                              AssertPolicy assert_policy,
-                              PoolPolicy pool_policy) {
-  masm_ = masm;
-  pool_policy_ = pool_policy;
-  if (masm_ == NULL) {
-    // Nothing to do.
-    // We may reach this point in a context of conditional code generation. See
-    // `MacroAssembler::MoveImmediateHelper()` for an example.
-    return;
-  }
-  if (pool_policy_ == kCheckPools) {
-    // Do not use the more generic `EnsureEmitFor()` to avoid duplicating the
-    // work to check that enough space is available in the buffer. It is done
-    // below when opening `CodeBufferCheckScope`.
-    masm_->EnsureEmitPoolsFor(size);
-    masm_->BlockPools();
-  }
-  // The buffer should be checked *after* we emit the pools.
-  CodeBufferCheckScope::Open(masm_, size, kCheck, assert_policy);
-}
-
-
-void EmissionCheckScope::Close() {
-  if (masm_ == NULL) {
-    // Nothing to do.
-    return;
-  }
-  if (pool_policy_ == kCheckPools) {
-    masm_->ReleasePools();
-  }
 }
 
 
@@ -432,12 +384,7 @@ void MacroAssembler::FinalizeCode() {
 
 void MacroAssembler::CheckEmitFor(size_t amount) {
   CheckEmitPoolsFor(amount);
-  ptrdiff_t offset = amount;
-  // Ensure there's enough space for the emit, keep in mind the cursor will
-  // have moved if a pool was emitted.
-  if ((GetCursorOffset() + offset) > GetBufferEndOffset()) {
-    EnsureSpaceFor(amount);
-  }
+  GetBuffer()->EnsureSpaceFor(amount);
 }
 
 
@@ -1614,8 +1561,8 @@ void MacroAssembler::Move(const GenericOperand& dst,
 
   // The sizes of the operands must match exactly.
   VIXL_ASSERT(dst.GetSizeInBits() == src.GetSizeInBits());
-  size_t operand_size = dst.GetSizeInBits();
-  VIXL_ASSERT(operand_size <= kXRegSize);
+  VIXL_ASSERT(dst.GetSizeInBits() <= kXRegSize);
+  int operand_size = static_cast<int>(dst.GetSizeInBits());
 
   if (dst.IsCPURegister() && src.IsCPURegister()) {
     CPURegister dst_reg = dst.GetCPURegister();
@@ -2065,9 +2012,9 @@ void MacroAssembler::PushHelper(int count,
                                 const CPURegister& src3) {
   // Ensure that we don't unintentionally modify scratch or debug registers.
   // Worst case for size is 2 stp.
-  InstructionAccurateScope scope(this,
-                                 2,
-                                 InstructionAccurateScope::kMaximumSize);
+  ExactAssemblyScope scope(this,
+                           2 * kInstructionSize,
+                           ExactAssemblyScope::kMaximumSize);
 
   VIXL_ASSERT(AreSameSizeAndType(src0, src1, src2, src3));
   VIXL_ASSERT(size == src0.GetSizeInBytes());
@@ -2109,9 +2056,9 @@ void MacroAssembler::PopHelper(int count,
                                const CPURegister& dst3) {
   // Ensure that we don't unintentionally modify scratch or debug registers.
   // Worst case for size is 2 ldp.
-  InstructionAccurateScope scope(this,
-                                 2,
-                                 InstructionAccurateScope::kMaximumSize);
+  ExactAssemblyScope scope(this,
+                           2 * kInstructionSize,
+                           ExactAssemblyScope::kMaximumSize);
 
   VIXL_ASSERT(AreSameSizeAndType(dst0, dst1, dst2, dst3));
   VIXL_ASSERT(size == dst0.GetSizeInBytes());
@@ -2235,7 +2182,7 @@ void MacroAssembler::PushCalleeSavedRegisters() {
   // Ensure that the macro-assembler doesn't use any scratch registers.
   // 10 stp will be emitted.
   // TODO(all): Should we use GetCalleeSaved and SavedFP.
-  InstructionAccurateScope scope(this, 10);
+  ExactAssemblyScope scope(this, 10 * kInstructionSize);
 
   // This method must not be called unless the current stack pointer is sp.
   VIXL_ASSERT(sp.Is(StackPointer()));
@@ -2260,7 +2207,7 @@ void MacroAssembler::PopCalleeSavedRegisters() {
   // Ensure that the macro-assembler doesn't use any scratch registers.
   // 10 ldp will be emitted.
   // TODO(all): Should we use GetCalleeSaved and SavedFP.
-  InstructionAccurateScope scope(this, 10);
+  ExactAssemblyScope scope(this, 10 * kInstructionSize);
 
   // This method must not be called unless the current stack pointer is sp.
   VIXL_ASSERT(sp.Is(StackPointer()));
@@ -2376,7 +2323,7 @@ void MacroAssembler::BumpSystemStackPointer(const Operand& space) {
   // TODO: Several callers rely on this not using scratch registers, so we use
   // the assembler directly here. However, this means that large immediate
   // values of 'space' cannot be handled.
-  InstructionAccurateScope scope(this, 1);
+  ExactAssemblyScope scope(this, kInstructionSize);
   sub(sp, StackPointer(), space);
 }
 
@@ -2517,7 +2464,7 @@ void MacroAssembler::PrintfNoPreserve(const char* format,
   // since the system printf function will use a different instruction set and
   // the procedure-call standard will not be compatible.
   if (generate_simulator_code_) {
-    InstructionAccurateScope scope(this, kPrintfLength / kInstructionSize);
+    ExactAssemblyScope scope(this, kPrintfLength);
     hlt(kPrintfOpcode);
     dc32(arg_count);  // kPrintfArgCountOffset
 
@@ -2620,7 +2567,7 @@ void MacroAssembler::Trace(TraceParameters parameters, TraceCommand command) {
   if (generate_simulator_code_) {
     // The arguments to the trace pseudo instruction need to be contiguous in
     // memory, so make sure we don't try to emit a literal pool.
-    InstructionAccurateScope scope(this, kTraceLength / kInstructionSize);
+    ExactAssemblyScope scope(this, kTraceLength);
 
     Label start;
     bind(&start);
@@ -2647,7 +2594,7 @@ void MacroAssembler::Log(TraceParameters parameters) {
   if (generate_simulator_code_) {
     // The arguments to the log pseudo instruction need to be contiguous in
     // memory, so make sure we don't try to emit a literal pool.
-    InstructionAccurateScope scope(this, kLogLength / kInstructionSize);
+    ExactAssemblyScope scope(this, kLogLength);
 
     Label start;
     bind(&start);
@@ -2667,14 +2614,14 @@ void MacroAssembler::Log(TraceParameters parameters) {
 
 void MacroAssembler::EnableInstrumentation() {
   VIXL_ASSERT(!isprint(InstrumentStateEnable));
-  InstructionAccurateScope scope(this, 1);
+  ExactAssemblyScope scope(this, kInstructionSize);
   movn(xzr, InstrumentStateEnable);
 }
 
 
 void MacroAssembler::DisableInstrumentation() {
   VIXL_ASSERT(!isprint(InstrumentStateDisable));
-  InstructionAccurateScope scope(this, 1);
+  ExactAssemblyScope scope(this, kInstructionSize);
   movn(xzr, InstrumentStateDisable);
 }
 
@@ -2686,7 +2633,7 @@ void MacroAssembler::AnnotateInstrumentation(const char* marker_name) {
   // characters are reserved for controlling features of the instrumentation.
   VIXL_ASSERT(isprint(marker_name[0]) && isprint(marker_name[1]));
 
-  InstructionAccurateScope scope(this, 1);
+  ExactAssemblyScope scope(this, kInstructionSize);
   movn(xzr, (marker_name[1] << 8) | marker_name[0]);
 }
 

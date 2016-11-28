@@ -32,7 +32,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>  // NOLINT
+#include <iostream>
 
 #include "utils-vixl.h"
 #include "aarch32/constants-aarch32.h"
@@ -102,7 +102,8 @@ Register RegisterList::GetFirstAvailableRegister() const {
 }
 
 
-std::ostream& PrintRegisterList(std::ostream& os, uint32_t list) {  // NOLINT
+std::ostream& PrintRegisterList(std::ostream& os,  // NOLINT(runtime/references)
+                                uint32_t list) {
   os << "{";
   bool first = true;
   int code = 0;
@@ -710,10 +711,11 @@ bool ImmediateA32::IsImmediateA32(uint32_t imm) {
 
 
 uint32_t ImmediateA32::Decode(uint32_t value) {
-  int rotation = value >> 8;
-  VIXL_ASSERT(rotation <= 15);
-  rotation *= 2;
+  int rotation = (value >> 8) * 2;
+  VIXL_ASSERT(rotation >= 0);
+  VIXL_ASSERT(rotation <= 30);
   value &= 0xff;
+  if (rotation == 0) return value;
   return (value >> rotation) | (value << (32 - rotation));
 }
 

@@ -27,8 +27,8 @@
 
 #include <cmath>
 
-#include "aarch64/assembler-aarch64.h"
-#include "aarch64/macro-assembler-aarch64.h"
+#include "assembler-aarch64.h"
+#include "macro-assembler-aarch64.h"
 
 namespace vixl {
 namespace aarch64 {
@@ -49,60 +49,23 @@ RawLiteral::RawLiteral(size_t size,
 }
 
 
-// Assembler
-Assembler::Assembler(PositionIndependentCodeOption pic) : pic_(pic) {
-#ifdef VIXL_DEBUG
-  buffer_monitor_ = 0;
-#endif
-  buffer_ = new CodeBuffer();
-}
-
-
-Assembler::Assembler(size_t capacity, PositionIndependentCodeOption pic)
-    : pic_(pic) {
-#ifdef VIXL_DEBUG
-  buffer_monitor_ = 0;
-#endif
-  buffer_ = new CodeBuffer(capacity);
-}
-
-
-Assembler::Assembler(byte* buffer,
-                     size_t capacity,
-                     PositionIndependentCodeOption pic)
-    : pic_(pic) {
-#ifdef VIXL_DEBUG
-  buffer_monitor_ = 0;
-#endif
-  buffer_ = new CodeBuffer(buffer, capacity);
-}
-
-
-Assembler::~Assembler() {
-  VIXL_ASSERT(buffer_monitor_ == 0);
-  delete buffer_;
-}
-
-
-void Assembler::Reset() { buffer_->Reset(); }
-
-
-void Assembler::FinalizeCode() { buffer_->SetClean(); }
+void Assembler::Reset() { GetBuffer()->Reset(); }
 
 
 void Assembler::bind(Label* label) {
-  BindToOffset(label, buffer_->GetCursorOffset());
+  BindToOffset(label, GetBuffer()->GetCursorOffset());
 }
 
 
 void Assembler::BindToOffset(Label* label, ptrdiff_t offset) {
-  VIXL_ASSERT((offset >= 0) && (offset <= buffer_->GetCursorOffset()));
+  VIXL_ASSERT((offset >= 0) && (offset <= GetBuffer()->GetCursorOffset()));
   VIXL_ASSERT(offset % kInstructionSize == 0);
 
   label->Bind(offset);
 
   for (Label::LabelLinksIterator it(label); !it.Done(); it.Advance()) {
-    Instruction* link = GetOffsetAddress<Instruction*>(*it.Current());
+    Instruction* link =
+        GetBuffer()->GetOffsetAddress<Instruction*>(*it.Current());
     link->SetImmPCOffsetTarget(GetLabelAddress<Instruction*>(label));
   }
   label->ClearAllLinks();
@@ -123,7 +86,7 @@ ptrdiff_t Assembler::LinkAndGetOffsetTo(Label* label) {
     uintptr_t label_offset = GetLabelAddress<uintptr_t>(label) >> element_shift;
     return label_offset - pc_offset;
   } else {
-    label->AddLink(buffer_->GetCursorOffset());
+    label->AddLink(GetBuffer()->GetCursorOffset());
     return 0;
   }
 }
@@ -153,7 +116,7 @@ void Assembler::place(RawLiteral* literal) {
     ptrdiff_t offset = literal->GetLastUse();
     bool done;
     do {
-      Instruction* ldr = GetOffsetAddress<Instruction*>(offset);
+      Instruction* ldr = GetBuffer()->GetOffsetAddress<Instruction*>(offset);
       VIXL_ASSERT(ldr->IsLoadLiteral());
 
       ptrdiff_t imm19 = ldr->GetImmLLiteral();
@@ -232,10 +195,10 @@ void Assembler::ret(const Register& xn) {
 }
 
 
-void Assembler::b(int imm26) { Emit(B | ImmUncondBranch(imm26)); }
+void Assembler::b(int64_t imm26) { Emit(B | ImmUncondBranch(imm26)); }
 
 
-void Assembler::b(int imm19, Condition cond) {
+void Assembler::b(int64_t imm19, Condition cond) {
   Emit(B_cond | ImmCondBranch(imm19) | cond);
 }
 
@@ -254,7 +217,7 @@ void Assembler::b(Label* label, Condition cond) {
 }
 
 
-void Assembler::bl(int imm26) { Emit(BL | ImmUncondBranch(imm26)); }
+void Assembler::bl(int64_t imm26) { Emit(BL | ImmUncondBranch(imm26)); }
 
 
 void Assembler::bl(Label* label) {
@@ -264,7 +227,7 @@ void Assembler::bl(Label* label) {
 }
 
 
-void Assembler::cbz(const Register& rt, int imm19) {
+void Assembler::cbz(const Register& rt, int64_t imm19) {
   Emit(SF(rt) | CBZ | ImmCmpBranch(imm19) | Rt(rt));
 }
 
@@ -276,7 +239,7 @@ void Assembler::cbz(const Register& rt, Label* label) {
 }
 
 
-void Assembler::cbnz(const Register& rt, int imm19) {
+void Assembler::cbnz(const Register& rt, int64_t imm19) {
   Emit(SF(rt) | CBNZ | ImmCmpBranch(imm19) | Rt(rt));
 }
 
@@ -312,8 +275,7 @@ void Assembler::tbl(const VRegister& vd,
                     const VRegister& vm) {
   USE(vn2);
   VIXL_ASSERT(AreSameFormat(vn, vn2));
-  VIXL_ASSERT(vn2.GetCode() == ((vn.GetCode() + 1) % kNumberOfVRegisters));
-
+  VIXL_ASSERT(AreConsecutive(vn, vn2));
   NEONTable(vd, vn, vm, NEON_TBL_2v);
 }
 
@@ -325,9 +287,7 @@ void Assembler::tbl(const VRegister& vd,
                     const VRegister& vm) {
   USE(vn2, vn3);
   VIXL_ASSERT(AreSameFormat(vn, vn2, vn3));
-  VIXL_ASSERT(vn2.GetCode() == ((vn.GetCode() + 1) % kNumberOfVRegisters));
-  VIXL_ASSERT(vn3.GetCode() == ((vn.GetCode() + 2) % kNumberOfVRegisters));
-
+  VIXL_ASSERT(AreConsecutive(vn, vn2, vn3));
   NEONTable(vd, vn, vm, NEON_TBL_3v);
 }
 
@@ -340,10 +300,7 @@ void Assembler::tbl(const VRegister& vd,
                     const VRegister& vm) {
   USE(vn2, vn3, vn4);
   VIXL_ASSERT(AreSameFormat(vn, vn2, vn3, vn4));
-  VIXL_ASSERT(vn2.GetCode() == ((vn.GetCode() + 1) % kNumberOfVRegisters));
-  VIXL_ASSERT(vn3.GetCode() == ((vn.GetCode() + 2) % kNumberOfVRegisters));
-  VIXL_ASSERT(vn4.GetCode() == ((vn.GetCode() + 3) % kNumberOfVRegisters));
-
+  VIXL_ASSERT(AreConsecutive(vn, vn2, vn3, vn4));
   NEONTable(vd, vn, vm, NEON_TBL_4v);
 }
 
@@ -361,8 +318,7 @@ void Assembler::tbx(const VRegister& vd,
                     const VRegister& vm) {
   USE(vn2);
   VIXL_ASSERT(AreSameFormat(vn, vn2));
-  VIXL_ASSERT(vn2.GetCode() == ((vn.GetCode() + 1) % kNumberOfVRegisters));
-
+  VIXL_ASSERT(AreConsecutive(vn, vn2));
   NEONTable(vd, vn, vm, NEON_TBX_2v);
 }
 
@@ -374,9 +330,7 @@ void Assembler::tbx(const VRegister& vd,
                     const VRegister& vm) {
   USE(vn2, vn3);
   VIXL_ASSERT(AreSameFormat(vn, vn2, vn3));
-  VIXL_ASSERT(vn2.GetCode() == ((vn.GetCode() + 1) % kNumberOfVRegisters));
-  VIXL_ASSERT(vn3.GetCode() == ((vn.GetCode() + 2) % kNumberOfVRegisters));
-
+  VIXL_ASSERT(AreConsecutive(vn, vn2, vn3));
   NEONTable(vd, vn, vm, NEON_TBX_3v);
 }
 
@@ -389,15 +343,12 @@ void Assembler::tbx(const VRegister& vd,
                     const VRegister& vm) {
   USE(vn2, vn3, vn4);
   VIXL_ASSERT(AreSameFormat(vn, vn2, vn3, vn4));
-  VIXL_ASSERT(vn2.GetCode() == ((vn.GetCode() + 1) % kNumberOfVRegisters));
-  VIXL_ASSERT(vn3.GetCode() == ((vn.GetCode() + 2) % kNumberOfVRegisters));
-  VIXL_ASSERT(vn4.GetCode() == ((vn.GetCode() + 3) % kNumberOfVRegisters));
-
+  VIXL_ASSERT(AreConsecutive(vn, vn2, vn3, vn4));
   NEONTable(vd, vn, vm, NEON_TBX_4v);
 }
 
 
-void Assembler::tbz(const Register& rt, unsigned bit_pos, int imm14) {
+void Assembler::tbz(const Register& rt, unsigned bit_pos, int64_t imm14) {
   VIXL_ASSERT(rt.Is64Bits() || (rt.Is32Bits() && (bit_pos < kWRegSize)));
   Emit(TBZ | ImmTestBranchBit(bit_pos) | ImmTestBranch(imm14) | Rt(rt));
 }
@@ -410,7 +361,7 @@ void Assembler::tbz(const Register& rt, unsigned bit_pos, Label* label) {
 }
 
 
-void Assembler::tbnz(const Register& rt, unsigned bit_pos, int imm14) {
+void Assembler::tbnz(const Register& rt, unsigned bit_pos, int64_t imm14) {
   VIXL_ASSERT(rt.Is64Bits() || (rt.Is32Bits() && (bit_pos < kWRegSize)));
   Emit(TBNZ | ImmTestBranchBit(bit_pos) | ImmTestBranch(imm14) | Rt(rt));
 }
@@ -423,7 +374,7 @@ void Assembler::tbnz(const Register& rt, unsigned bit_pos, Label* label) {
 }
 
 
-void Assembler::adr(const Register& xd, int imm21) {
+void Assembler::adr(const Register& xd, int64_t imm21) {
   VIXL_ASSERT(xd.Is64Bits());
   Emit(ADR | ImmPCRelAddress(imm21) | Rd(xd));
 }
@@ -434,7 +385,7 @@ void Assembler::adr(const Register& xd, Label* label) {
 }
 
 
-void Assembler::adrp(const Register& xd, int imm21) {
+void Assembler::adrp(const Register& xd, int64_t imm21) {
   VIXL_ASSERT(xd.Is64Bits());
   Emit(ADRP | ImmPCRelAddress(imm21) | Rd(xd));
 }
@@ -1252,18 +1203,18 @@ void Assembler::ldr(const CPURegister& rt, RawLiteral* literal) {
 }
 
 
-void Assembler::ldrsw(const Register& rt, int imm19) {
+void Assembler::ldrsw(const Register& rt, int64_t imm19) {
   Emit(LDRSW_x_lit | ImmLLiteral(imm19) | Rt(rt));
 }
 
 
-void Assembler::ldr(const CPURegister& rt, int imm19) {
+void Assembler::ldr(const CPURegister& rt, int64_t imm19) {
   LoadLiteralOp op = LoadLiteralOpFor(rt);
   Emit(op | ImmLLiteral(imm19) | Rt(rt));
 }
 
 
-void Assembler::prfm(PrefetchOperation op, int imm19) {
+void Assembler::prfm(PrefetchOperation op, int64_t imm19) {
   Emit(PRFM_lit | ImmPrefetchOperation(op) | ImmLLiteral(imm19));
 }
 
@@ -4436,17 +4387,15 @@ bool Assembler::IsImmFP64(double imm) {
 
 bool Assembler::IsImmLSPair(int64_t offset, unsigned access_size) {
   VIXL_ASSERT(access_size <= kQRegSizeInBytesLog2);
-  bool offset_is_size_multiple =
-      (((offset >> access_size) << access_size) == offset);
-  return offset_is_size_multiple && IsInt7(offset >> access_size);
+  return IsMultiple(offset, 1 << access_size) &&
+         IsInt7(offset / (1 << access_size));
 }
 
 
 bool Assembler::IsImmLSScaled(int64_t offset, unsigned access_size) {
   VIXL_ASSERT(access_size <= kQRegSizeInBytesLog2);
-  bool offset_is_size_multiple =
-      (((offset >> access_size) << access_size) == offset);
-  return offset_is_size_multiple && IsUint12(offset >> access_size);
+  return IsMultiple(offset, 1 << access_size) &&
+         IsUint12(offset / (1 << access_size));
 }
 
 
@@ -4663,10 +4612,10 @@ bool Assembler::IsImmLogical(uint64_t value,
   //    1110ss     4    UInt(ss)
   //    11110s     2    UInt(s)
   //
-  // So we 'or' (-d << 1) with our computed s to form imms.
+  // So we 'or' (2 * -d) with our computed s to form imms.
   if ((n != NULL) || (imm_s != NULL) || (imm_r != NULL)) {
     *n = out_n;
-    *imm_s = ((-d << 1) | (s - 1)) & 0x3f;
+    *imm_s = ((2 * -d) | (s - 1)) & 0x3f;
     *imm_r = r;
   }
 
@@ -4874,81 +4823,26 @@ bool AreConsecutive(const VRegister& reg1,
                     const VRegister& reg3,
                     const VRegister& reg4) {
   VIXL_ASSERT(reg1.IsValid());
-  bool match = true;
-  match &= !reg2.IsValid() ||
-           (reg2.GetCode() == ((reg1.GetCode() + 1) % kNumberOfVRegisters));
-  match &= !reg3.IsValid() ||
-           (reg3.GetCode() == ((reg1.GetCode() + 2) % kNumberOfVRegisters));
-  match &= !reg4.IsValid() ||
-           (reg4.GetCode() == ((reg1.GetCode() + 3) % kNumberOfVRegisters));
-  return match;
-}
 
-
-CodeBufferCheckScope::CodeBufferCheckScope(Assembler* assm,
-                                           size_t size,
-                                           CheckPolicy check_policy,
-                                           AssertPolicy assert_policy)
-#ifdef VIXL_DEBUG
-    : initialised_(false)
-#endif
-{
-  Open(assm, size, check_policy, assert_policy);
-}
-
-
-CodeBufferCheckScope::CodeBufferCheckScope()
-#ifdef VIXL_DEBUG
-    : initialised_(false)
-#endif
-{
-  // Nothing to do.
-}
-
-
-void CodeBufferCheckScope::Open(Assembler* assm,
-                                size_t size,
-                                CheckPolicy check_policy,
-                                AssertPolicy assert_policy) {
-  VIXL_ASSERT(!initialised_);
-  VIXL_ASSERT(assm != NULL);
-  if (check_policy == kCheck) assm->EnsureSpaceFor(size);
-#ifdef VIXL_DEBUG
-  assm_ = assm;
-  size_ = size;
-  assert_policy_ = assert_policy;
-  assm_->bind(&start_);
-  assm_->AcquireBuffer();
-  initialised_ = true;
-#else
-  USE(assert_policy);
-#endif
-}
-
-
-CodeBufferCheckScope::~CodeBufferCheckScope() { Close(); }
-
-
-void CodeBufferCheckScope::Close() {
-#ifdef VIXL_DEBUG
-  if (!initialised_) {
-    return;
+  if (!reg2.IsValid()) {
+    return true;
+  } else if (reg2.GetCode() != ((reg1.GetCode() + 1) % kNumberOfVRegisters)) {
+    return false;
   }
-  assm_->ReleaseBuffer();
-  switch (assert_policy_) {
-    case kNoAssert:
-      break;
-    case kExactSize:
-      VIXL_ASSERT(assm_->GetSizeOfCodeGeneratedSince(&start_) == size_);
-      break;
-    case kMaximumSize:
-      VIXL_ASSERT(assm_->GetSizeOfCodeGeneratedSince(&start_) <= size_);
-      break;
-    default:
-      VIXL_UNREACHABLE();
+
+  if (!reg3.IsValid()) {
+    return true;
+  } else if (reg3.GetCode() != ((reg2.GetCode() + 1) % kNumberOfVRegisters)) {
+    return false;
   }
-  initialised_ = false;
-#endif
+
+  if (!reg4.IsValid()) {
+    return true;
+  } else if (reg4.GetCode() != ((reg3.GetCode() + 1) % kNumberOfVRegisters)) {
+    return false;
+  }
+
+  return true;
 }
 }  // namespace aarch64
 }  // namespace vixl

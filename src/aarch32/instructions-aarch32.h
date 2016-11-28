@@ -276,8 +276,8 @@ class DataType {
   DataTypeValue value_;
 
  public:
-  DataType(DataTypeValue value) : value_(value) {}  // NOLINT
-  DataType(uint32_t size)                           // NOLINT
+  DataType(DataTypeValue value) : value_(value) {}  // NOLINT(runtime/explicit)
+  DataType(uint32_t size)                           // NOLINT(runtime/explicit)
       : value_(static_cast<DataTypeValue>(kDataTypeUntyped | size)) {
     VIXL_ASSERT((size == 8) || (size == 16) || (size == 32) || (size == 64));
   }
@@ -445,7 +445,8 @@ const QRegister NoQReg;
 class RegisterList {
  public:
   RegisterList() : list_(0) {}
-  RegisterList(Register reg) : list_(RegisterToList(reg)) {}  // NOLINT
+  RegisterList(Register reg)  // NOLINT(runtime/explicit)
+      : list_(RegisterToList(reg)) {}
   RegisterList(Register reg1, Register reg2)
       : list_(RegisterToList(reg1) | RegisterToList(reg2)) {}
   RegisterList(Register reg1, Register reg2, Register reg3)
@@ -546,7 +547,13 @@ class VRegisterList {
   explicit VRegisterList(uint64_t list) : list_(list) {}
   uint64_t GetList() const { return list_; }
   void SetList(uint64_t list) { list_ = list; }
-  bool Includes(const VRegister& reg) const {
+  // Because differently-sized V registers overlap with one another, there is no
+  // way to implement a single 'Includes' function in a way that is unsurprising
+  // for all existing uses.
+  bool IncludesAllOf(const VRegister& reg) const {
+    return (list_ & RegisterToList(reg)) == RegisterToList(reg);
+  }
+  bool IncludesAliasOf(const VRegister& reg) const {
     return (list_ & RegisterToList(reg)) != 0;
   }
   void Combine(const VRegisterList& other) { list_ |= other.GetList(); }
@@ -614,9 +621,11 @@ class VRegisterList {
   // Bitfield representation of all registers in the list.
   // (0x3 for d0, 0xc0 for d1, 0x30 for d2, ...). We have one, two or four bits
   // per register according to their size. This way we can make sure that we
-  // account for overlapping registers. A register is included in this list if
-  // any of its bits are set.  For example, adding s3 to the list implies d1 and
-  // q0.
+  // account for overlapping registers.
+  // A register is wholly included in this list only if all of its bits are set.
+  // A register is aliased by the list if at least one of its bits are set.
+  // The IncludesAllOf and IncludesAliasOf helpers are provided to make this
+  // distinction clear.
   uint64_t list_;
 };
 
@@ -630,10 +639,13 @@ class SRegisterList {
       : first_(first.GetCode()), length_(length) {
     VIXL_ASSERT(length >= 0);
   }
-  const SRegister& GetFirstSRegister() const { return first_; }
-  const SRegister GetLastSRegister() const {
-    return SRegister((first_.GetCode() + length_ - 1) % kNumberOfSRegisters);
+  SRegister GetSRegister(int n) const {
+    VIXL_ASSERT(n >= 0);
+    VIXL_ASSERT(n < length_);
+    return SRegister((first_.GetCode() + n) % kNumberOfSRegisters);
   }
+  const SRegister& GetFirstSRegister() const { return first_; }
+  SRegister GetLastSRegister() const { return GetSRegister(length_ - 1); }
   int GetLength() const { return length_; }
 };
 
@@ -649,10 +661,13 @@ class DRegisterList {
       : first_(first.GetCode()), length_(length) {
     VIXL_ASSERT(length >= 0);
   }
-  const DRegister& GetFirstDRegister() const { return first_; }
-  const DRegister GetLastDRegister() const {
-    return DRegister((first_.GetCode() + length_ - 1) % kMaxNumberOfDRegisters);
+  DRegister GetDRegister(int n) const {
+    VIXL_ASSERT(n >= 0);
+    VIXL_ASSERT(n < length_);
+    return DRegister((first_.GetCode() + n) % kMaxNumberOfDRegisters);
   }
+  const DRegister& GetFirstDRegister() const { return first_; }
+  DRegister GetLastDRegister() const { return GetDRegister(length_ - 1); }
   int GetLength() const { return length_; }
 };
 
@@ -663,66 +678,70 @@ enum SpacingType { kSingle, kDouble };
 enum TransferType { kMultipleLanes, kOneLane, kAllLanes };
 
 class NeonRegisterList {
-  DRegister first_, last_;
+  DRegister first_;
   SpacingType spacing_;
   TransferType type_;
   int lane_;
+  int length_;
 
  public:
   NeonRegisterList(DRegister reg, TransferType type)
       : first_(reg.GetCode()),
-        last_(reg.GetCode()),
         spacing_(kSingle),
         type_(type),
-        lane_(-1) {
+        lane_(-1),
+        length_(1) {
     VIXL_ASSERT(type_ != kOneLane);
   }
   NeonRegisterList(DRegister reg, int lane)
       : first_(reg.GetCode()),
-        last_(reg.GetCode()),
         spacing_(kSingle),
         type_(kOneLane),
-        lane_(lane) {
+        lane_(lane),
+        length_(1) {
     VIXL_ASSERT((lane_ >= 0) && (lane_ < 4));
   }
   NeonRegisterList(DRegister first,
                    DRegister last,
                    SpacingType spacing,
                    TransferType type)
-      : first_(first.GetCode()),
-        last_(last.GetCode()),
-        spacing_(spacing),
-        type_(type),
-        lane_(-1) {
-    VIXL_ASSERT(type_ != kOneLane);
-    VIXL_ASSERT(first_.GetCode() <= last_.GetCode());
-    VIXL_ASSERT(GetLength() <= 4);
-    VIXL_ASSERT((spacing_ == kSingle) ||
-                (((last_.GetCode() - first_.GetCode()) & 1) == 0));
+      : first_(first.GetCode()), spacing_(spacing), type_(type), lane_(-1) {
+    VIXL_ASSERT(type != kOneLane);
+    VIXL_ASSERT(first.GetCode() <= last.GetCode());
+
+    int range = last.GetCode() - first.GetCode();
+    VIXL_ASSERT(IsSingleSpaced() || IsMultiple(range, 2));
+    length_ = (IsDoubleSpaced() ? (range / 2) : range) + 1;
+
+    VIXL_ASSERT(length_ <= 4);
   }
   NeonRegisterList(DRegister first,
                    DRegister last,
                    SpacingType spacing,
                    int lane)
       : first_(first.GetCode()),
-        last_(last.GetCode()),
         spacing_(spacing),
         type_(kOneLane),
         lane_(lane) {
-    VIXL_ASSERT((lane_ >= 0) && (lane_ < 4));
-    VIXL_ASSERT(first_.GetCode() <= last_.GetCode());
-    VIXL_ASSERT(GetLength() <= 4);
-    VIXL_ASSERT((spacing_ == kSingle) ||
-                (((last_.GetCode() - first_.GetCode()) & 1) == 0));
+    VIXL_ASSERT((lane >= 0) && (lane < 4));
+    VIXL_ASSERT(first.GetCode() <= last.GetCode());
+
+    int range = last.GetCode() - first.GetCode();
+    VIXL_ASSERT(IsSingleSpaced() || IsMultiple(range, 2));
+    length_ = (IsDoubleSpaced() ? (range / 2) : range) + 1;
+
+    VIXL_ASSERT(length_ <= 4);
+  }
+  DRegister GetDRegister(int n) const {
+    VIXL_ASSERT(n >= 0);
+    VIXL_ASSERT(n < length_);
+    unsigned code = first_.GetCode() + (IsDoubleSpaced() ? (2 * n) : n);
+    VIXL_ASSERT(code < kMaxNumberOfDRegisters);
+    return DRegister(code);
   }
   const DRegister& GetFirstDRegister() const { return first_; }
-  const DRegister& GetLastDRegister() const { return last_; }
-  uint32_t GetLength() const {
-    uint32_t length =
-        (last_.GetCode() - first_.GetCode()) % kMaxNumberOfDRegisters;
-    if (spacing_ == kDouble) length /= 2;
-    return 1 + length;
-  }
+  DRegister GetLastDRegister() const { return GetDRegister(length_ - 1); }
+  int GetLength() const { return length_; }
   bool IsSingleSpaced() const { return spacing_ == kSingle; }
   bool IsDoubleSpaced() const { return spacing_ == kDouble; }
   bool IsTransferAllLanes() const { return type_ == kAllLanes; }
@@ -740,7 +759,8 @@ class SpecialRegister {
 
  public:
   explicit SpecialRegister(uint32_t reg) : reg_(reg) {}
-  SpecialRegister(SpecialRegisterType reg) : reg_(reg) {}  // NOLINT
+  SpecialRegister(SpecialRegisterType reg)  // NOLINT(runtime/explicit)
+      : reg_(reg) {}
   uint32_t GetReg() const { return reg_; }
   const char* GetName() const;
   bool Is(SpecialRegister value) const { return reg_ == value.reg_; }
@@ -793,7 +813,8 @@ class BankedRegister {
 
  public:
   explicit BankedRegister(unsigned reg) : reg_(reg) {}
-  BankedRegister(BankedRegisterType reg) : reg_(reg) {}  // NOLINT
+  BankedRegister(BankedRegisterType reg)  // NOLINT(runtime/explicit)
+      : reg_(reg) {}
   uint32_t GetCode() const { return reg_; }
   const char* GetName() const;
 };
@@ -845,7 +866,8 @@ class MaskedSpecialRegister {
   explicit MaskedSpecialRegister(uint32_t reg) : reg_(reg) {
     VIXL_ASSERT(reg <= SPSR_fsxc);
   }
-  MaskedSpecialRegister(MaskedSpecialRegisterType reg)  // NOLINT
+  MaskedSpecialRegister(
+      MaskedSpecialRegisterType reg)  // NOLINT(runtime/explicit)
       : reg_(reg) {}
   uint32_t GetReg() const { return reg_; }
   const char* GetName() const;
@@ -886,7 +908,8 @@ class SpecialFPRegister {
     }
 #endif
   }
-  SpecialFPRegister(SpecialFPRegisterType reg) : reg_(reg) {}  // NOLINT
+  SpecialFPRegister(SpecialFPRegisterType reg)  // NOLINT(runtime/explicit)
+      : reg_(reg) {}
   uint32_t GetReg() const { return reg_; }
   const char* GetName() const;
   bool Is(SpecialFPRegister value) const { return reg_ == value.reg_; }
@@ -928,7 +951,7 @@ class Coprocessor {
 
  public:
   explicit Coprocessor(uint32_t coproc) : coproc_(coproc) {}
-  Coprocessor(CoprocessorName coproc)  // NOLINT
+  Coprocessor(CoprocessorName coproc)  // NOLINT(runtime/explicit)
       : coproc_(static_cast<uint32_t>(coproc)) {}
   bool Is(Coprocessor coproc) const { return coproc_ == coproc.coproc_; }
   bool Is(CoprocessorName coproc) const { return coproc_ == coproc; }
@@ -963,13 +986,15 @@ class Condition {
   uint32_t condition_;
   static const uint32_t kNever = 15;
   static const uint32_t kMask = 0xf;
+  static const uint32_t kNone = 0x10 | al;
 
  public:
-  static const ConditionType kNone = static_cast<ConditionType>(0x10 | al);
+  static const Condition None() { return Condition(kNone); }
   explicit Condition(uint32_t condition) : condition_(condition) {
     VIXL_ASSERT(condition <= kNone);
   }
-  Condition(ConditionType condition) : condition_(condition) {}  // NOLINT
+  Condition(ConditionType condition)  // NOLINT(runtime/explicit)
+      : condition_(condition) {}
   uint32_t GetCondition() const { return condition_ & kMask; }
   bool IsNone() const { return condition_ == kNone; }
   const char* GetName() const;
@@ -993,7 +1018,7 @@ enum SignType { plus, minus };
 class Sign {
  public:
   Sign() : sign_(plus) {}
-  Sign(SignType sign) : sign_(sign) {}  // NOLINT
+  Sign(SignType sign) : sign_(sign) {}  // NOLINT(runtime/explicit)
   const char* GetName() const { return (IsPlus() ? "" : "-"); }
   bool IsPlus() const { return sign_ == plus; }
   bool IsMinus() const { return sign_ == minus; }
@@ -1012,7 +1037,7 @@ enum ShiftType { LSL = 0x0, LSR = 0x1, ASR = 0x2, ROR = 0x3, RRX = 0x4 };
 class Shift {
  public:
   Shift() : shift_(LSL) {}
-  Shift(ShiftType shift) : shift_(shift) {}  // NOLINT
+  Shift(ShiftType shift) : shift_(shift) {}  // NOLINT(runtime/explicit)
   explicit Shift(uint32_t shift) : shift_(static_cast<ShiftType>(shift)) {}
   const Shift& GetShift() const { return *this; }
   ShiftType GetType() const { return shift_; }
@@ -1114,7 +1139,8 @@ class EncodingSize {
 
  public:
   explicit EncodingSize(uint32_t size) : size_(size) {}
-  EncodingSize(EncodingSizeType size) : size_(size) {}  // NOLINT
+  EncodingSize(EncodingSizeType size)  // NOLINT(runtime/explicit)
+      : size_(size) {}
   uint32_t GetSize() const { return size_; }
   const char* GetName() const;
   bool IsBest() const { return size_ == Best; }
@@ -1132,7 +1158,8 @@ class WriteBack {
   WriteBackValue value_;
 
  public:
-  WriteBack(WriteBackValue value) : value_(value) {}  // NOLINT
+  WriteBack(WriteBackValue value)  // NOLINT(runtime/explicit)
+      : value_(value) {}
   explicit WriteBack(int value)
       : value_((value == 0) ? NO_WRITE_BACK : WRITE_BACK) {}
   uint32_t GetWriteBackUint32() const { return (value_ == WRITE_BACK) ? 1 : 0; }
@@ -1210,8 +1237,9 @@ class MemoryBarrier {
   MemoryBarrierType type_;
 
  public:
-  MemoryBarrier(MemoryBarrierType type) : type_(type) {}  // NOLINT
-  MemoryBarrier(uint32_t type)                            // NOLINT
+  MemoryBarrier(MemoryBarrierType type)  // NOLINT(runtime/explicit)
+      : type_(type) {}
+  MemoryBarrier(uint32_t type)  // NOLINT(runtime/explicit)
       : type_(static_cast<MemoryBarrierType>(type)) {
     VIXL_ASSERT((type & 0x3) != 0);
   }
@@ -1237,8 +1265,9 @@ class InterruptFlags {
   InterruptFlagsType type_;
 
  public:
-  InterruptFlags(InterruptFlagsType type) : type_(type) {}  // NOLINT
-  InterruptFlags(uint32_t type)                             // NOLINT
+  InterruptFlags(InterruptFlagsType type)  // NOLINT(runtime/explicit)
+      : type_(type) {}
+  InterruptFlags(uint32_t type)  // NOLINT(runtime/explicit)
       : type_(static_cast<InterruptFlagsType>(type)) {
     VIXL_ASSERT(type <= 7);
   }
@@ -1256,8 +1285,8 @@ class Endianness {
   EndiannessType type_;
 
  public:
-  Endianness(EndiannessType type) : type_(type) {}  // NOLINT
-  Endianness(uint32_t type)                         // NOLINT
+  Endianness(EndiannessType type) : type_(type) {}  // NOLINT(runtime/explicit)
+  Endianness(uint32_t type)                         // NOLINT(runtime/explicit)
       : type_(static_cast<EndiannessType>(type)) {
     VIXL_ASSERT(type <= 1);
   }
@@ -1301,6 +1330,8 @@ inline std::ostream& operator<<(std::ostream& os, Alignment align) {
 
 class RawLiteral : public Label {
  public:
+  enum PlacementPolicy { kPlacedWhenUsed, kManuallyPlaced };
+
   enum DeletionPolicy {
     kDeletedOnPlacementByPool,
     kDeletedOnPoolDestruction,
@@ -1310,16 +1341,23 @@ class RawLiteral : public Label {
  public:
   RawLiteral(const void* addr,
              size_t size,
+             PlacementPolicy placement_policy = kPlacedWhenUsed,
              DeletionPolicy deletion_policy = kManuallyDeleted)
       : addr_(addr),
         size_(size),
         position_(kMaxOffset),
+        manually_placed_(placement_policy == kManuallyPlaced),
+        deletion_policy_(deletion_policy) {}
+  RawLiteral(const void* addr, size_t size, DeletionPolicy deletion_policy)
+      : addr_(addr),
+        size_(size),
+        position_(kMaxOffset),
+        manually_placed_(false),
         deletion_policy_(deletion_policy) {}
   ~RawLiteral() {}
+  const void* GetDataAddress() const { return addr_; }
   size_t GetSize() const { return size_; }
   size_t GetAlignedSize() const { return (size_ + 3) & ~0x3; }
-  const void* GetDataAddress() const { return addr_; }
-  DeletionPolicy GetDeletionPolicy() const { return deletion_policy_; }
 
   Offset GetPositionInPool() const { return position_; }
   void SetPositionInPool(Offset position_in_pool) {
@@ -1329,6 +1367,9 @@ class RawLiteral : public Label {
     position_ = position_in_pool;
   }
 
+  bool IsManuallyPlaced() const { return manually_placed_; }
+  DeletionPolicy GetDeletionPolicy() const { return deletion_policy_; }
+
  private:
   // Data address before it's moved into the code buffer.
   const void* const addr_;
@@ -1336,6 +1377,8 @@ class RawLiteral : public Label {
   const size_t size_;
   // Position in the pool, if not in a pool: Label::kMaxOffset.
   Offset position_;
+  // When this flag is true, the label will be placed manually.
+  bool manually_placed_;
   // When is the literal to be removed from the memory
   // Can be delete'd when:
   //   moved into the code buffer: kDeletedOnPlacementByPool
@@ -1348,7 +1391,11 @@ template <typename T>
 class Literal : public RawLiteral {
  public:
   explicit Literal(const T& value,
+                   PlacementPolicy placement_policy = kPlacedWhenUsed,
                    DeletionPolicy deletion_policy = kManuallyDeleted)
+      : RawLiteral(&value_, sizeof(T), placement_policy, deletion_policy),
+        value_(value) {}
+  explicit Literal(const T& value, DeletionPolicy deletion_policy)
       : RawLiteral(&value_, sizeof(T), deletion_policy), value_(value) {}
   void UpdateValue(const T& value, CodeBuffer* buffer) {
     value_ = value;
@@ -1361,11 +1408,13 @@ class Literal : public RawLiteral {
   T value_;
 };
 
-template <>
-class Literal<const char*> : public RawLiteral {
+class StringLiteral : public RawLiteral {
  public:
-  explicit Literal(const char* str,
-                   DeletionPolicy deletion_policy = kManuallyDeleted)
+  explicit StringLiteral(const char* str,
+                         PlacementPolicy placement_policy = kPlacedWhenUsed,
+                         DeletionPolicy deletion_policy = kManuallyDeleted)
+      : RawLiteral(str, strlen(str) + 1, placement_policy, deletion_policy) {}
+  explicit StringLiteral(const char* str, DeletionPolicy deletion_policy)
       : RawLiteral(str, strlen(str) + 1, deletion_policy) {}
 };
 
