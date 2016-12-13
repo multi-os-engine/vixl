@@ -40,8 +40,8 @@ class Assembler : public internal::AssemblerBase {
   Condition first_condition_;
   uint16_t it_mask_;
   bool has_32_dregs_;
-  // True if we can use the assembler instructions.
-  bool allow_assembler_;
+  bool allow_unpredictable_;
+  bool allow_strongly_discouraged_;
 
  protected:
   void EmitT32_16(uint16_t instr);
@@ -70,26 +70,54 @@ class Assembler : public internal::AssemblerBase {
                 const Label::LabelEmitOperator& op);
 
  public:
+  class AllowUnpredictableScope {
+    Assembler* assembler_;
+    bool old_;
+
+   public:
+    explicit AllowUnpredictableScope(Assembler* assembler)
+        : assembler_(assembler), old_(assembler->allow_unpredictable_) {
+      assembler_->allow_unpredictable_ = true;
+    }
+    ~AllowUnpredictableScope() { assembler_->allow_unpredictable_ = old_; }
+  };
+  class AllowStronglyDiscouragedScope {
+    Assembler* assembler_;
+    bool old_;
+
+   public:
+    explicit AllowStronglyDiscouragedScope(Assembler* assembler)
+        : assembler_(assembler), old_(assembler->allow_strongly_discouraged_) {
+      assembler_->allow_strongly_discouraged_ = true;
+    }
+    ~AllowStronglyDiscouragedScope() {
+      assembler_->allow_strongly_discouraged_ = old_;
+    }
+  };
+
   explicit Assembler(InstructionSet isa = A32)
       : isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
-        allow_assembler_(true) {}
+        allow_unpredictable_(false),
+        allow_strongly_discouraged_(false) {}
   explicit Assembler(size_t capacity, InstructionSet isa = A32)
       : AssemblerBase(capacity),
         isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
-        allow_assembler_(true) {}
+        allow_unpredictable_(false),
+        allow_strongly_discouraged_(false) {}
   Assembler(byte* buffer, size_t capacity, InstructionSet isa = A32)
       : AssemblerBase(buffer, capacity),
         isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
-        allow_assembler_(true) {}
+        allow_unpredictable_(false),
+        allow_strongly_discouraged_(false) {}
   virtual ~Assembler() {}
   void UseInstructionSet(InstructionSet isa) {
     VIXL_ASSERT((isa_ == isa) || (GetCursorOffset() == 0));
@@ -105,10 +133,6 @@ class Assembler : public internal::AssemblerBase {
     first_condition_ = first_condition;
     it_mask_ = it_mask;
   }
-  void SetAllowAssembler(bool allow_assembler) {
-    allow_assembler_ = allow_assembler;
-  }
-  bool AllowAssembler() const { return allow_assembler_; }
   bool Is16BitEncoding(uint16_t instr) const {
     VIXL_ASSERT(IsUsingT32());
     return instr < 0xe800;
@@ -136,6 +160,7 @@ class Assembler : public internal::AssemblerBase {
   }
   void place(RawLiteral* literal) {
     VIXL_ASSERT(AllowAssembler());
+    VIXL_ASSERT(literal->IsManuallyPlaced());
     PlaceHelper(literal);
   }
 
@@ -5635,17 +5660,15 @@ class Assembler : public internal::AssemblerBase {
   void yield(Condition cond) { yield(cond, Best); }
   void yield(EncodingSize size) { yield(al, size); }
   // End of generated code.
-  virtual void UnimplementedDelegate(InstructionType /*type*/) {
-    VIXL_ABORT_WITH_MSG("Unimplemented delegate\n");
+  virtual void UnimplementedDelegate(InstructionType type) {
+    std::string error_message(std::string("Ill-formed '") +
+                              std::string(ToCString(type)) +
+                              std::string("' instruction.\n"));
+    VIXL_ABORT_WITH_MSG(error_message.c_str());
   }
-  virtual bool AllowUnpredictable() {
-    VIXL_ABORT_WITH_MSG("Unpredictable instruction\n");
-    return false;
-  }
+  virtual bool AllowUnpredictable() { return allow_unpredictable_; }
   virtual bool AllowStronglyDiscouraged() {
-    VIXL_ABORT_WITH_MSG(
-        "ARM strongly recommends to not use this instruction\n");
-    return false;
+    return allow_strongly_discouraged_;
   }
 };
 
