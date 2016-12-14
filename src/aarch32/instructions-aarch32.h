@@ -150,15 +150,25 @@ class Register : public CPURegister {
 
 std::ostream& operator<<(std::ostream& os, const Register reg);
 
-class RegisterOrAPSR_nzcv : public Register {
+class RegisterOrAPSR_nzcv {
+  uint32_t code_;
+
  public:
-  explicit RegisterOrAPSR_nzcv(uint32_t code) : Register(code) {}
+  explicit RegisterOrAPSR_nzcv(uint32_t code) : code_(code) {
+    VIXL_ASSERT(code_ < kNumberOfRegisters);
+  }
+  bool IsAPSR_nzcv() const { return code_ == kPcCode; }
+  uint32_t GetCode() const { return code_; }
+  Register AsRegister() const {
+    VIXL_ASSERT(!IsAPSR_nzcv());
+    return Register(code_);
+  }
 };
 
 inline std::ostream& operator<<(std::ostream& os,
                                 const RegisterOrAPSR_nzcv reg) {
-  if (reg.IsPC()) return os << "APSR_nzcv";
-  return os << Register(reg.GetCode());
+  if (reg.IsAPSR_nzcv()) return os << "APSR_nzcv";
+  return os << reg.AsRegister();
 }
 
 class SRegister;
@@ -1347,7 +1357,11 @@ class RawLiteral : public Label {
         size_(size),
         position_(kMaxOffset),
         manually_placed_(placement_policy == kManuallyPlaced),
-        deletion_policy_(deletion_policy) {}
+        deletion_policy_(deletion_policy) {
+    // We can't have manually placed literals that are not manually deleted.
+    VIXL_ASSERT(!IsManuallyPlaced() ||
+                (GetDeletionPolicy() == kManuallyDeleted));
+  }
   RawLiteral(const void* addr, size_t size, DeletionPolicy deletion_policy)
       : addr_(addr),
         size_(size),
