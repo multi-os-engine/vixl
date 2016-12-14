@@ -78,6 +78,17 @@
       ]
     },
     {
+      "type": "macro-assembler",
+      "test-cases": [
+        {
+          "name": "Operands",
+          "operands": [
+            "cond", "rd", "rn"
+          ]
+        }
+      ]
+    },
+    {
       "type": "simulator",
       "test-cases": [
         {
