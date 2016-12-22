@@ -43,15 +43,17 @@ CodeBuffer::CodeBuffer(size_t capacity)
   if (capacity_ == 0) {
     return;
   }
-#ifdef __APPLE__
+#ifdef VIXL_CODE_BUFFER_MALLOC
   buffer_ = reinterpret_cast<byte*>(malloc(capacity_));
-#else
+#elif defined(VIXL_CODE_BUFFER_MMAP)
   buffer_ = reinterpret_cast<byte*>(mmap(NULL,
                                          capacity,
                                          PROT_READ | PROT_WRITE,
                                          MAP_PRIVATE | MAP_ANONYMOUS,
                                          -1,
                                          0));
+#else
+#error Unknown code buffer allocator.
 #endif
   VIXL_CHECK(buffer_ != NULL);
   // Aarch64 instructions must be word aligned, we assert the default allocator
@@ -75,25 +77,31 @@ CodeBuffer::CodeBuffer(byte* buffer, size_t capacity)
 CodeBuffer::~CodeBuffer() {
   VIXL_ASSERT(!IsDirty());
   if (managed_) {
-#ifdef __APPLE__
+#ifdef VIXL_CODE_BUFFER_MALLOC
     free(buffer_);
-#else
+#elif defined(VIXL_CODE_BUFFER_MMAP)
     munmap(buffer_, capacity_);
+#else
+#error Unknown code buffer allocator.
 #endif
   }
 }
 
 
+#ifdef VIXL_CODE_BUFFER_MMAP
 void CodeBuffer::SetExecutable() {
   int ret = mprotect(buffer_, capacity_, PROT_READ | PROT_EXEC);
   VIXL_CHECK(ret == 0);
 }
+#endif
 
 
+#ifdef VIXL_CODE_BUFFER_MMAP
 void CodeBuffer::SetWritable() {
   int ret = mprotect(buffer_, capacity_, PROT_READ | PROT_WRITE);
   VIXL_CHECK(ret == 0);
 }
+#endif
 
 
 void CodeBuffer::EmitString(const char* string) {
@@ -148,14 +156,16 @@ void CodeBuffer::Grow(size_t new_capacity) {
   VIXL_ASSERT(managed_);
   VIXL_ASSERT(new_capacity > capacity_);
   ptrdiff_t cursor_offset = GetCursorOffset();
-#ifdef __APPLE__
+#ifdef VIXL_CODE_BUFFER_MALLOC
   buffer_ = static_cast<byte*>(realloc(buffer_, new_capacity));
   VIXL_CHECK(buffer_ != NULL);
-#else
+#elif defined(VIXL_CODE_BUFFER_MMAP)
   buffer_ = static_cast<byte*>(
       mremap(buffer_, capacity_, new_capacity, MREMAP_MAYMOVE));
-#endif
   VIXL_CHECK(buffer_ != MAP_FAILED);
+#else
+#error Unknown code buffer allocator.
+#endif
 
   cursor_ = buffer_ + cursor_offset;
   capacity_ = new_capacity;
