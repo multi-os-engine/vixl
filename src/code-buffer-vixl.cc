@@ -168,7 +168,7 @@ void CodeBuffer::Grow(size_t new_capacity) {
 #elif defined(VIXL_CODE_BUFFER_MMAP)
 #ifdef __APPLE__
   // TODO: Avoid using VIXL_CODE_BUFFER_MMAP.
-  VIXL_ASSERT(false);
+  VIXL_ASSERT((false));
 #else
   buffer_ = static_cast<byte*>(
       mremap(buffer_, capacity_, new_capacity, MREMAP_MAYMOVE));
