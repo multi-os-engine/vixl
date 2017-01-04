@@ -33,6 +33,16 @@ extern "C" {
 
 namespace vixl {
 
+// BSD uses `MAP_ANON` instead of the Linux `MAP_ANONYMOUS`. The `MAP_ANONYMOUS`
+// alias should generally be available, but is not always, so define it manually
+// if necessary.
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
+#if !defined(MREMAP_MAYMOVE)
+#define MREMAP_MAYMOVE 0
+#endif
 
 CodeBuffer::CodeBuffer(size_t capacity)
     : buffer_(NULL),
