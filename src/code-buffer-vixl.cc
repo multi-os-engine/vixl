@@ -40,10 +40,6 @@ namespace vixl {
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-#if !defined(MREMAP_MAYMOVE)
-#define MREMAP_MAYMOVE 0
-#endif
-
 CodeBuffer::CodeBuffer(size_t capacity)
     : buffer_(NULL),
       managed_(true),
@@ -170,9 +166,14 @@ void CodeBuffer::Grow(size_t new_capacity) {
   buffer_ = static_cast<byte*>(realloc(buffer_, new_capacity));
   VIXL_CHECK(buffer_ != NULL);
 #elif defined(VIXL_CODE_BUFFER_MMAP)
+#ifdef __APPLE__
+  // TODO: Avoid using VIXL_CODE_BUFFER_MMAP.
+  VIXL_ASSERT(false);
+#else
   buffer_ = static_cast<byte*>(
       mremap(buffer_, capacity_, new_capacity, MREMAP_MAYMOVE));
   VIXL_CHECK(buffer_ != MAP_FAILED);
+#endif
 #else
 #error Unknown code buffer allocator.
 #endif
