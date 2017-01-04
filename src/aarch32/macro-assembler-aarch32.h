@@ -40,6 +40,7 @@ namespace vixl {
 namespace aarch32 {
 
 class JumpTableBase;
+class UseScratchRegisterScope;
 
 enum FlagsUpdate { LeaveFlags = 0, SetFlags = 1, DontCare = 2 };
 
@@ -175,7 +176,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 
    private:
     unsigned count_;
-    static const uint32_t kMaxRecursion = 5;
+    static const uint32_t kMaxRecursion = 6;
     const char* location_stack_[kMaxRecursion];
   };
 
@@ -211,8 +212,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
           // We generate a conditional branch and an unconditional instruction.
           // TODO: Use a scope utility with a size check. To do that, we'd need
           // one with Open() and Close() implemented.
-          masm_->EnsureEmitFor(k16BitT32InstructionSizeInBytes +
-                               kMaxT32MacroInstructionSizeInBytes);
+          masm_->EnsureEmitFor(kMaxT32MacroInstructionSizeInBytes);
           // Generate the branch.
           masm_->b(cond_.Negate(), Narrow, &label_);
           // Tell the macro-assembler to generate unconditional instructions.
@@ -256,14 +256,14 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   template <Assembler::InstructionCondDtDL asmfn>
   class EmitLiteralCondDtDL {
    public:
-    EmitLiteralCondDtDL(Condition cond, DataType dt, DRegister rt)
-        : cond_(cond), dt_(dt), rt_(rt) {}
-    void emit(MacroAssembler* const masm, RawLiteral* const literal) {
-      (masm->*asmfn)(cond_, dt_, rt_, literal);
+    EmitLiteralCondDtDL(DataType dt, DRegister rt) : dt_(dt), rt_(rt) {}
+    void emit(MacroAssembler* const masm,
+              Condition cond,
+              RawLiteral* const literal) {
+      (masm->*asmfn)(cond, dt_, rt_, literal);
     }
 
    private:
-    Condition cond_;
     DataType dt_;
     DRegister rt_;
   };
@@ -271,14 +271,14 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   template <Assembler::InstructionCondDtSL asmfn>
   class EmitLiteralCondDtSL {
    public:
-    EmitLiteralCondDtSL(Condition cond, DataType dt, SRegister rt)
-        : cond_(cond), dt_(dt), rt_(rt) {}
-    void emit(MacroAssembler* const masm, RawLiteral* const literal) {
-      (masm->*asmfn)(cond_, dt_, rt_, literal);
+    EmitLiteralCondDtSL(DataType dt, SRegister rt) : dt_(dt), rt_(rt) {}
+    void emit(MacroAssembler* const masm,
+              Condition cond,
+              RawLiteral* const literal) {
+      (masm->*asmfn)(cond, dt_, rt_, literal);
     }
 
    private:
-    Condition cond_;
     DataType dt_;
     SRegister rt_;
   };
@@ -286,27 +286,28 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   template <Assembler::InstructionCondRL asmfn>
   class EmitLiteralCondRL {
    public:
-    EmitLiteralCondRL(Condition cond, Register rt) : cond_(cond), rt_(rt) {}
-    void emit(MacroAssembler* const masm, RawLiteral* const literal) {
-      (masm->*asmfn)(cond_, rt_, literal);
+    explicit EmitLiteralCondRL(Register rt) : rt_(rt) {}
+    void emit(MacroAssembler* const masm,
+              Condition cond,
+              RawLiteral* const literal) {
+      (masm->*asmfn)(cond, rt_, literal);
     }
 
    private:
-    Condition cond_;
     Register rt_;
   };
 
   template <Assembler::InstructionCondRRL asmfn>
   class EmitLiteralCondRRL {
    public:
-    EmitLiteralCondRRL(Condition cond, Register rt, Register rt2)
-        : cond_(cond), rt_(rt), rt2_(rt2) {}
-    void emit(MacroAssembler* const masm, RawLiteral* const literal) {
-      (masm->*asmfn)(cond_, rt_, rt2_, literal);
+    EmitLiteralCondRRL(Register rt, Register rt2) : rt_(rt), rt2_(rt2) {}
+    void emit(MacroAssembler* const masm,
+              Condition cond,
+              RawLiteral* const literal) {
+      (masm->*asmfn)(cond, rt_, rt2_, literal);
     }
 
    private:
-    Condition cond_;
     Register rt_, rt2_;
   };
 
@@ -335,20 +336,39 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     // "literal" is the literal we want to insert into the pool.
     // "from" is the location where the instruction which uses the literal has
     // been generated.
-    bool IsInsertTooFar(RawLiteral* literal, uint32_t from) const {
-      // Last accessible location for the instruction which uses the literal.
-      uint32_t checkpoint = from + literal->GetLastInsertForwardDistance();
-      checkpoint =
-          std::min(checkpoint, static_cast<uint32_t>(literal->GetCheckpoint()));
+    bool WasInsertedTooFar(RawLiteral* literal) const {
+      // Last accessible location for the instruction we just generated, which
+      // uses the literal.
+      Label::ForwardReference& reference = literal->GetBackForwardRef();
+      Label::Offset new_checkpoint = AlignDown(reference.GetCheckpoint(), 4);
+
+      // TODO: We should not need to get the min of new_checkpoint and the
+      // existing checkpoint. The existing checkpoint should already have
+      // been checked when reserving space for this load literal instruction.
+      // The assertion below asserts that we don't need the min operation here.
+      Label::Offset checkpoint =
+          std::min(new_checkpoint, literal->GetAlignedCheckpoint(4));
+      bool literal_in_pool =
+          (literal->GetPositionInPool() != Label::kMaxOffset);
+      Label::Offset position_in_pool = literal_in_pool
+                                           ? literal->GetPositionInPool()
+                                           : literal_pool_.GetSize();
       // Compare the checkpoint to the location where the literal should be
       // added.
       // We add space for two instructions: one branch and one potential veneer
       // which may be added after the check. In this particular use case, no
       // veneer can be added but, this way, we are consistent with all the
       // literal pool checks.
+      int32_t from =
+          reference.GetLocation() + masm_->GetArchitectureStatePCOffset();
       bool too_far =
-          AlignDown(checkpoint, 4) <
-          from + literal_pool_.GetSize() + 2 * kMaxInstructionSizeInBytes;
+          checkpoint < from + position_in_pool +
+                           2 * static_cast<int32_t>(kMaxInstructionSizeInBytes);
+      // Assert if the literal is already in the pool and the existing
+      // checkpoint triggers a rewind here, as this means the pool should
+      // already have been emitted (perhaps we have not reserved enough space
+      // for the instruction we are about to rewind).
+      VIXL_ASSERT(!(too_far && (literal->GetCheckpoint() < new_checkpoint)));
       return too_far;
     }
 
@@ -402,25 +422,35 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   // Note: The instruction is generated via
   // void T::emit(MacroAssembler* const, RawLiteral* const)
   template <typename T>
-  void GenerateInstruction(T instr_callback, RawLiteral* const literal) {
+  void GenerateInstruction(Condition cond,
+                           T instr_callback,
+                           RawLiteral* const literal) {
     int32_t cursor = GetCursorOffset();
-    uint32_t where = cursor + GetArchitectureStatePCOffset();
     // Emit the instruction, via the assembler
     {
       MacroEmissionCheckScope guard(this);
-      instr_callback.emit(this, literal);
+      // The ITScope can change the condition and we want to be able to revert
+      // this.
+      Condition c(cond);
+      ITScope it_scope(this, &c);
+      instr_callback.emit(this, c, literal);
     }
     if (!literal->IsManuallyPlaced() && !literal->IsBound()) {
-      if (IsInsertTooFar(literal, where)) {
+      if (WasInsertedTooFar(literal)) {
         // The instruction's data is too far: revert the emission
         GetBuffer()->Rewind(cursor);
         literal->InvalidateLastForwardReference(RawLiteral::kNoUpdateNecessary);
         EmitLiteralPool(kBranchRequired);
         MacroEmissionCheckScope guard(this);
-        instr_callback.emit(this, literal);
+        ITScope it_scope(this, &cond);
+        instr_callback.emit(this, cond, literal);
       }
-      literal_pool_manager_.GetLiteralPool()->AddLiteral(literal);
-      literal_pool_manager_.UpdateCheckpoint(literal);
+      // The literal pool above might have included the literal - in which
+      // case it will now be bound.
+      if (!literal->IsBound()) {
+        literal_pool_manager_.GetLiteralPool()->AddLiteral(literal);
+        literal_pool_manager_.UpdateCheckpoint(literal);
+      }
     }
   }
 
@@ -428,6 +458,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   explicit MacroAssembler(InstructionSet isa = A32)
       : Assembler(isa),
         available_(r12),
+        current_scratch_scope_(NULL),
         checkpoint_(Label::kMaxOffset),
         literal_pool_manager_(this),
         veneer_pool_manager_(this),
@@ -444,6 +475,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   explicit MacroAssembler(size_t size, InstructionSet isa = A32)
       : Assembler(size, isa),
         available_(r12),
+        current_scratch_scope_(NULL),
         checkpoint_(Label::kMaxOffset),
         literal_pool_manager_(this),
         veneer_pool_manager_(this),
@@ -457,6 +489,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   MacroAssembler(byte* buffer, size_t size, InstructionSet isa = A32)
       : Assembler(buffer, size, isa),
         available_(r12),
+        current_scratch_scope_(NULL),
         checkpoint_(Label::kMaxOffset),
         literal_pool_manager_(this),
         veneer_pool_manager_(this),
@@ -487,6 +520,14 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 
   RegisterList* GetScratchRegisterList() { return &available_; }
   VRegisterList* GetScratchVRegisterList() { return &available_vfp_; }
+
+  // Get or set the current (most-deeply-nested) UseScratchRegisterScope.
+  void SetCurrentScratchRegisterScope(UseScratchRegisterScope* scope) {
+    current_scratch_scope_ = scope;
+  }
+  UseScratchRegisterScope* GetCurrentScratchRegisterScope() {
+    return current_scratch_scope_;
+  }
 
   // Given an address calculation (Register + immediate), generate code to
   // partially compute the address. The returned MemOperand will perform any
@@ -543,8 +584,8 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 
   // State and type helpers.
   bool IsModifiedImmediate(uint32_t imm) {
-    return (IsUsingT32() && ImmediateT32(imm).IsValid()) ||
-           ImmediateA32(imm).IsValid();
+    return IsUsingT32() ? ImmediateT32::IsImmediateT32(imm)
+                        : ImmediateA32::IsImmediateA32(imm);
   }
 
   void Bind(Label* label) {
@@ -616,8 +657,8 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     PerformEnsureEmit(target, size);
   }
 
-  bool IsInsertTooFar(RawLiteral* literal, uint32_t where) {
-    return literal_pool_manager_.IsInsertTooFar(literal, where);
+  bool WasInsertedTooFar(RawLiteral* literal) {
+    return literal_pool_manager_.WasInsertedTooFar(literal);
   }
 
   bool AliasesAvailableScratchRegister(Register reg) {
@@ -695,54 +736,79 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   // Adr with a literal already constructed. Add the literal to the pool if it
   // is not already done.
   void Adr(Condition cond, Register rd, RawLiteral* literal) {
-    EmitLiteralCondRL<&Assembler::adr> emit_helper(cond, rd);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRL<&Assembler::adr> emit_helper(rd);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Adr(Register rd, RawLiteral* literal) { Adr(al, rd, literal); }
 
   // Loads with literals already constructed. Add the literal to the pool
   // if it is not already done.
   void Ldr(Condition cond, Register rt, RawLiteral* literal) {
-    EmitLiteralCondRL<&Assembler::ldr> emit_helper(cond, rt);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRL<&Assembler::ldr> emit_helper(rt);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Ldr(Register rt, RawLiteral* literal) { Ldr(al, rt, literal); }
 
   void Ldrb(Condition cond, Register rt, RawLiteral* literal) {
-    EmitLiteralCondRL<&Assembler::ldrb> emit_helper(cond, rt);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRL<&Assembler::ldrb> emit_helper(rt);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Ldrb(Register rt, RawLiteral* literal) { Ldrb(al, rt, literal); }
 
   void Ldrd(Condition cond, Register rt, Register rt2, RawLiteral* literal) {
-    EmitLiteralCondRRL<&Assembler::ldrd> emit_helper(cond, rt, rt2);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt2));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRRL<&Assembler::ldrd> emit_helper(rt, rt2);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Ldrd(Register rt, Register rt2, RawLiteral* literal) {
     Ldrd(al, rt, rt2, literal);
   }
 
   void Ldrh(Condition cond, Register rt, RawLiteral* literal) {
-    EmitLiteralCondRL<&Assembler::ldrh> emit_helper(cond, rt);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRL<&Assembler::ldrh> emit_helper(rt);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Ldrh(Register rt, RawLiteral* literal) { Ldrh(al, rt, literal); }
 
   void Ldrsb(Condition cond, Register rt, RawLiteral* literal) {
-    EmitLiteralCondRL<&Assembler::ldrsb> emit_helper(cond, rt);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRL<&Assembler::ldrsb> emit_helper(rt);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Ldrsb(Register rt, RawLiteral* literal) { Ldrsb(al, rt, literal); }
 
   void Ldrsh(Condition cond, Register rt, RawLiteral* literal) {
-    EmitLiteralCondRL<&Assembler::ldrsh> emit_helper(cond, rt);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondRL<&Assembler::ldrsh> emit_helper(rt);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Ldrsh(Register rt, RawLiteral* literal) { Ldrsh(al, rt, literal); }
 
   void Vldr(Condition cond, DataType dt, DRegister rd, RawLiteral* literal) {
-    EmitLiteralCondDtDL<&Assembler::vldr> emit_helper(cond, dt, rd);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondDtDL<&Assembler::vldr> emit_helper(dt, rd);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Vldr(DataType dt, DRegister rd, RawLiteral* literal) {
     Vldr(al, dt, rd, literal);
@@ -755,8 +821,11 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
 
   void Vldr(Condition cond, DataType dt, SRegister rd, RawLiteral* literal) {
-    EmitLiteralCondDtSL<&Assembler::vldr> emit_helper(cond, dt, rd);
-    GenerateInstruction(emit_helper, literal);
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
+    EmitLiteralCondDtSL<&Assembler::vldr> emit_helper(dt, rd);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Vldr(DataType dt, SRegister rd, RawLiteral* literal) {
     Vldr(al, dt, rd, literal);
@@ -770,10 +839,13 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 
   // Generic Ldr(register, data)
   void Ldr(Condition cond, Register rt, uint32_t v) {
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
     RawLiteral* literal =
         new Literal<uint32_t>(v, RawLiteral::kDeletedOnPlacementByPool);
-    EmitLiteralCondRL<&Assembler::ldr> emit_helper(cond, rt);
-    GenerateInstruction(emit_helper, literal);
+    EmitLiteralCondRL<&Assembler::ldr> emit_helper(rt);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   template <typename T>
   void Ldr(Register rt, T v) {
@@ -782,10 +854,14 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 
   // Generic Ldrd(rt, rt2, data)
   void Ldrd(Condition cond, Register rt, Register rt2, uint64_t v) {
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt2));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
     RawLiteral* literal =
         new Literal<uint64_t>(v, RawLiteral::kDeletedOnPlacementByPool);
-    EmitLiteralCondRRL<&Assembler::ldrd> emit_helper(cond, rt, rt2);
-    GenerateInstruction(emit_helper, literal);
+    EmitLiteralCondRRL<&Assembler::ldrd> emit_helper(rt, rt2);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   template <typename T>
   void Ldrd(Register rt, Register rt2, T v) {
@@ -793,18 +869,24 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
 
   void Vldr(Condition cond, SRegister rd, float v) {
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
     RawLiteral* literal =
         new Literal<float>(v, RawLiteral::kDeletedOnPlacementByPool);
-    EmitLiteralCondDtSL<&Assembler::vldr> emit_helper(cond, Untyped32, rd);
-    GenerateInstruction(emit_helper, literal);
+    EmitLiteralCondDtSL<&Assembler::vldr> emit_helper(Untyped32, rd);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Vldr(SRegister rd, float v) { Vldr(al, rd, v); }
 
   void Vldr(Condition cond, DRegister rd, double v) {
+    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
+    VIXL_ASSERT(allow_macro_instructions_);
+    VIXL_ASSERT(OutsideITBlock());
     RawLiteral* literal =
         new Literal<double>(v, RawLiteral::kDeletedOnPlacementByPool);
-    EmitLiteralCondDtDL<&Assembler::vldr> emit_helper(cond, Untyped64, rd);
-    GenerateInstruction(emit_helper, literal);
+    EmitLiteralCondDtDL<&Assembler::vldr> emit_helper(Untyped64, rd);
+    GenerateInstruction(cond, emit_helper, literal);
   }
   void Vldr(DRegister rd, double v) { Vldr(al, rd, v); }
 
@@ -865,23 +947,29 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
                              int* vfp_count,
                              uint32_t* printf_type);
   // Handlers for cases not handled by the assembler.
+  // ADD, MOVT, MOVW, SUB, SXTB16, TEQ, UXTB16
   virtual void Delegate(InstructionType type,
                         InstructionCondROp instruction,
                         Condition cond,
                         Register rn,
                         const Operand& operand) VIXL_OVERRIDE;
+  // CMN, CMP, MOV, MOVS, MVN, MVNS, SXTB, SXTH, TST, UXTB, UXTH
   virtual void Delegate(InstructionType type,
                         InstructionCondSizeROp instruction,
                         Condition cond,
                         EncodingSize size,
                         Register rn,
                         const Operand& operand) VIXL_OVERRIDE;
+  // ADDW, ORN, ORNS, PKHBT, PKHTB, RSC, RSCS, SUBW, SXTAB, SXTAB16, SXTAH,
+  // UXTAB, UXTAB16, UXTAH
   virtual void Delegate(InstructionType type,
                         InstructionCondRROp instruction,
                         Condition cond,
                         Register rd,
                         Register rn,
                         const Operand& operand) VIXL_OVERRIDE;
+  // ADC, ADCS, ADD, ADDS, AND, ANDS, ASR, ASRS, BIC, BICS, EOR, EORS, LSL,
+  // LSLS, LSR, LSRS, ORR, ORRS, ROR, RORS, RSB, RSBS, SBC, SBCS, SUB, SUBS
   virtual void Delegate(InstructionType type,
                         InstructionCondSizeRL instruction,
                         Condition cond,
@@ -895,34 +983,40 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
                         Register rd,
                         Register rn,
                         const Operand& operand) VIXL_OVERRIDE;
+  // CBNZ, CBZ
   virtual void Delegate(InstructionType type,
                         InstructionRL instruction,
                         Register rn,
                         Label* label) VIXL_OVERRIDE;
+  // VMOV
   virtual void Delegate(InstructionType type,
                         InstructionCondDtSSop instruction,
                         Condition cond,
                         DataType dt,
                         SRegister rd,
                         const SOperand& operand) VIXL_OVERRIDE;
+  // VMOV, VMVN
   virtual void Delegate(InstructionType type,
                         InstructionCondDtDDop instruction,
                         Condition cond,
                         DataType dt,
                         DRegister rd,
                         const DOperand& operand) VIXL_OVERRIDE;
+  // VMOV, VMVN
   virtual void Delegate(InstructionType type,
                         InstructionCondDtQQop instruction,
                         Condition cond,
                         DataType dt,
                         QRegister rd,
                         const QOperand& operand) VIXL_OVERRIDE;
+  // LDR, LDRB, LDRH, LDRSB, LDRSH, STR, STRB, STRH
   virtual void Delegate(InstructionType type,
                         InstructionCondSizeRMop instruction,
                         Condition cond,
                         EncodingSize size,
                         Register rd,
                         const MemOperand& operand) VIXL_OVERRIDE;
+  // LDAEXD, LDRD, LDREXD, STLEX, STLEXB, STLEXH, STRD, STREX, STREXB, STREXH
   virtual void Delegate(InstructionType type,
                         InstructionCondRL instruction,
                         Condition cond,
@@ -940,18 +1034,21 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
                         Register rt,
                         Register rt2,
                         const MemOperand& operand) VIXL_OVERRIDE;
+  // VLDR, VSTR
   virtual void Delegate(InstructionType type,
                         InstructionCondDtSMop instruction,
                         Condition cond,
                         DataType dt,
                         SRegister rd,
                         const MemOperand& operand) VIXL_OVERRIDE;
+  // VLDR, VSTR
   virtual void Delegate(InstructionType type,
                         InstructionCondDtDMop instruction,
                         Condition cond,
                         DataType dt,
                         DRegister rd,
                         const MemOperand& operand) VIXL_OVERRIDE;
+  // MSR
   virtual void Delegate(InstructionType type,
                         InstructionCondMsrOp instruction,
                         Condition cond,
@@ -1089,7 +1186,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
         bool setflags_is_smaller =
             IsUsingT32() && cond.Is(al) &&
             ((operand.IsPlainRegister() && rd.IsLow() && rn.IsLow() &&
-              operand.GetBaseRegister().IsLow()) ||
+              !rd.Is(rn) && operand.GetBaseRegister().IsLow()) ||
              (operand.IsImmediate() &&
               ((rd.IsLow() && rn.IsLow() && (operand.GetImmediate() < 8)) ||
                (rd.IsLow() && rn.Is(rd) && (operand.GetImmediate() < 256)))));
@@ -1149,6 +1246,10 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(OutsideITBlock());
     MacroEmissionCheckScope guard(this);
+    if (rd.Is(rn) && operand.IsPlainRegister() &&
+        rd.Is(operand.GetBaseRegister())) {
+      return;
+    }
     if (cond.Is(al) && operand.IsImmediate()) {
       uint32_t immediate = operand.GetImmediate();
       if (immediate == 0) {
@@ -1182,6 +1283,10 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
         Ands(cond, rd, rn, operand);
         break;
       case DontCare:
+        if (operand.IsPlainRegister() && rd.Is(rn) &&
+            rd.Is(operand.GetBaseRegister())) {
+          return;
+        }
         bool setflags_is_smaller = IsUsingT32() && cond.Is(al) && rd.IsLow() &&
                                    rn.Is(rd) && operand.IsPlainRegister() &&
                                    operand.GetBaseRegister().IsLow();
@@ -1281,14 +1386,26 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     Asrs(al, rd, rm, operand);
   }
 
-  void B(Condition cond, Label* label) {
+  void B(Condition cond, Label* label, BranchHint hint = kBranchWithoutHint) {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(OutsideITBlock());
     MacroEmissionCheckScope guard(this);
-    b(cond, label);
+    if (hint == kNear) {
+      if (label->IsBound()) {
+        b(cond, label);
+      } else {
+        b(cond, Narrow, label);
+      }
+    } else {
+      b(cond, label);
+    }
     AddBranchLabel(label);
   }
-  void B(Label* label) { B(al, label); }
+  void B(Label* label, BranchHint hint = kBranchWithoutHint) {
+    B(al, label, hint);
+  }
+  void BPreferNear(Condition cond, Label* label) { B(cond, label, kNear); }
+  void BPreferNear(Label* label) { B(al, label, kNear); }
 
   void Bfc(Condition cond, Register rd, uint32_t lsb, const Operand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
@@ -2450,6 +2567,9 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(OutsideITBlock());
     MacroEmissionCheckScope guard(this);
+    if (operand.IsPlainRegister() && rd.Is(operand.GetBaseRegister())) {
+      return;
+    }
     bool can_use_it =
         // MOV<c>{<q>} <Rd>, #<imm8> ; T1
         (operand.IsImmediate() && rd.IsLow() &&
@@ -2487,6 +2607,9 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
         Movs(cond, rd, operand);
         break;
       case DontCare:
+        if (operand.IsPlainRegister() && rd.Is(operand.GetBaseRegister())) {
+          return;
+        }
         bool setflags_is_smaller =
             IsUsingT32() && cond.Is(al) &&
             ((operand.IsImmediateShiftedRegister() && rd.IsLow() &&
@@ -2743,6 +2866,10 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(OutsideITBlock());
     MacroEmissionCheckScope guard(this);
+    if (rd.Is(rn) && operand.IsPlainRegister() &&
+        rd.Is(operand.GetBaseRegister())) {
+      return;
+    }
     if (cond.Is(al) && operand.IsImmediate()) {
       uint32_t immediate = operand.GetImmediate();
       if ((immediate == 0) && rd.Is(rn)) {
@@ -2776,6 +2903,10 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
         Orrs(cond, rd, rn, operand);
         break;
       case DontCare:
+        if (operand.IsPlainRegister() && rd.Is(rn) &&
+            rd.Is(operand.GetBaseRegister())) {
+          return;
+        }
         bool setflags_is_smaller = IsUsingT32() && cond.Is(al) && rd.IsLow() &&
                                    rn.Is(rd) && operand.IsPlainRegister() &&
                                    operand.GetBaseRegister().IsLow();
@@ -10816,19 +10947,10 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   void Vsub(VRegister rd, VRegister rn, VRegister rm) { Vsub(al, rd, rn, rm); }
   // End of generated code.
 
-  virtual bool AllowUnpredictable() VIXL_OVERRIDE {
-    VIXL_ABORT_WITH_MSG("Unpredictable instruction.\n");
-    return false;
-  }
-  virtual bool AllowStronglyDiscouraged() VIXL_OVERRIDE {
-    VIXL_ABORT_WITH_MSG(
-        "ARM strongly recommends to not use this instruction.\n");
-    return false;
-  }
-
  private:
   RegisterList available_;
   VRegisterList available_vfp_;
+  UseScratchRegisterScope* current_scratch_scope_;
   MacroAssemblerContext context_;
   Label::Offset checkpoint_;
   LiteralPoolManager literal_pool_manager_;
@@ -10845,25 +10967,24 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 //
 // When the scope ends, the MacroAssembler's lists will be restored to their
 // original state, even if the lists were modified by some other means.
+//
+// Scopes must nest perfectly. That is, they must be destructed in reverse
+// construction order. Otherwise, it is not clear how to handle cases where one
+// scope acquires a register that was included in a now-closing scope. With
+// perfect nesting, this cannot occur.
 class UseScratchRegisterScope {
  public:
   // This constructor implicitly calls the `Open` function to initialise the
   // scope, so it is ready to use immediately after it has been constructed.
   explicit UseScratchRegisterScope(MacroAssembler* masm)
-      : available_(NULL),
-        available_vfp_(NULL),
-        old_available_(0),
-        old_available_vfp_(0) {
+      : masm_(NULL), parent_(NULL), old_available_(0), old_available_vfp_(0) {
     Open(masm);
   }
   // This constructor allows deferred and optional initialisation of the scope.
   // The user is required to explicitly call the `Open` function before using
   // the scope.
   UseScratchRegisterScope()
-      : available_(NULL),
-        available_vfp_(NULL),
-        old_available_(0),
-        old_available_vfp_(0) {}
+      : masm_(NULL), parent_(NULL), old_available_(0), old_available_vfp_(0) {}
 
   // This function performs the actual initialisation work.
   void Open(MacroAssembler* masm);
@@ -10933,9 +11054,11 @@ class UseScratchRegisterScope {
   void ExcludeAll();
 
  private:
-  // Available scratch registers.
-  RegisterList* available_;       // kRRegister
-  VRegisterList* available_vfp_;  // kVRegister
+  // The MacroAssembler maintains a list of available scratch registers, and
+  // also keeps track of the most recently-opened scope so that on destruction
+  // we can check that scopes do not outlive their parents.
+  MacroAssembler* masm_;
+  UseScratchRegisterScope* parent_;
 
   // The state of the available lists at the start of this scope.
   uint32_t old_available_;      // kRRegister

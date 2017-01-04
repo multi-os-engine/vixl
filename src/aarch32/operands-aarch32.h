@@ -135,7 +135,12 @@ class Operand {
                                "An integral type is required to build an "
                                "immediate operand.");
 #endif
-    VIXL_ASSERT(IsUint32(immediate));
+    // Allow both a signed or unsigned 32 bit integer to be passed, but store it
+    // as a uint32_t. The signedness information will be lost. We have to add a
+    // static_cast to make sure the compiler does not complain about implicit 64
+    // to 32 narrowing. It's perfectly acceptable for the user to pass a 64-bit
+    // value, as long as it can be encoded in 32 bits.
+    VIXL_ASSERT(IsInt32(immediate) || IsUint32(immediate));
     return Operand(static_cast<uint32_t>(immediate));
   }
 
@@ -205,16 +210,16 @@ class Operand {
   Operand(float) = delete;     // NOLINT(runtime/explicit)
   Operand(double) = delete;    // NOLINT(runtime/explicit)
 #else
-  Operand(int64_t) VIXL_NO_RETURN_IN_DEBUG_MODE {  // NOLINT(runtime/explicit)
+  VIXL_NO_RETURN_IN_DEBUG_MODE Operand(int64_t) {  // NOLINT(runtime/explicit)
     VIXL_UNREACHABLE();
   }
-  Operand(uint64_t) VIXL_NO_RETURN_IN_DEBUG_MODE {  // NOLINT(runtime/explicit)
+  VIXL_NO_RETURN_IN_DEBUG_MODE Operand(uint64_t) {  // NOLINT(runtime/explicit)
     VIXL_UNREACHABLE();
   }
-  Operand(float) VIXL_NO_RETURN_IN_DEBUG_MODE {  // NOLINT
+  VIXL_NO_RETURN_IN_DEBUG_MODE Operand(float) {  // NOLINT
     VIXL_UNREACHABLE();
   }
-  Operand(double) VIXL_NO_RETURN_IN_DEBUG_MODE {  // NOLINT
+  VIXL_NO_RETURN_IN_DEBUG_MODE Operand(double) {  // NOLINT
     VIXL_UNREACHABLE();
   }
 #endif
@@ -849,8 +854,8 @@ class MemOperand {
     if ((shift_amount_ == 0) && !shift_.IsLSL()) {
       VIXL_ABORT_WITH_MSG(
           "A shift by 0 is only accepted in "
-          "the case of lsl and will be considered a "
-          "No shift");
+          "the case of lsl and will be treated as "
+          "no shift.\n");
     }
     switch (shift_.GetType()) {
       case LSL:

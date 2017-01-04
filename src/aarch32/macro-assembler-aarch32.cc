@@ -37,45 +37,54 @@ namespace vixl {
 namespace aarch32 {
 
 void UseScratchRegisterScope::Open(MacroAssembler* masm) {
-  VIXL_ASSERT((available_ == NULL) && (available_vfp_ == NULL));
-  available_ = masm->GetScratchRegisterList();
-  old_available_ = available_->GetList();
-  available_vfp_ = masm->GetScratchVRegisterList();
-  old_available_vfp_ = available_vfp_->GetList();
+  VIXL_ASSERT(masm_ == NULL);
+  VIXL_ASSERT(masm != NULL);
+  masm_ = masm;
+
+  old_available_ = masm_->GetScratchRegisterList()->GetList();
+  old_available_vfp_ = masm_->GetScratchVRegisterList()->GetList();
+
+  parent_ = masm->GetCurrentScratchRegisterScope();
+  masm->SetCurrentScratchRegisterScope(this);
 }
 
 
 void UseScratchRegisterScope::Close() {
-  if (available_ != NULL) {
-    available_->SetList(old_available_);
-    available_ = NULL;
-  }
-  if (available_vfp_ != NULL) {
-    available_vfp_->SetList(old_available_vfp_);
-    available_vfp_ = NULL;
+  if (masm_ != NULL) {
+    // Ensure that scopes nest perfectly, and do not outlive their parents.
+    // This is a run-time check because the order of destruction of objects in
+    // the _same_ scope is implementation-defined, and is likely to change in
+    // optimised builds.
+    VIXL_CHECK(masm_->GetCurrentScratchRegisterScope() == this);
+    masm_->SetCurrentScratchRegisterScope(parent_);
+
+    masm_->GetScratchRegisterList()->SetList(old_available_);
+    masm_->GetScratchVRegisterList()->SetList(old_available_vfp_);
+
+    masm_ = NULL;
   }
 }
 
 
 bool UseScratchRegisterScope::IsAvailable(const Register& reg) const {
-  VIXL_ASSERT(available_ != NULL);
+  VIXL_ASSERT(masm_ != NULL);
   VIXL_ASSERT(reg.IsValid());
-  return available_->Includes(reg);
+  return masm_->GetScratchRegisterList()->Includes(reg);
 }
 
 
 bool UseScratchRegisterScope::IsAvailable(const VRegister& reg) const {
-  VIXL_ASSERT(available_vfp_ != NULL);
+  VIXL_ASSERT(masm_ != NULL);
   VIXL_ASSERT(reg.IsValid());
-  return available_vfp_->IncludesAllOf(reg);
+  return masm_->GetScratchVRegisterList()->IncludesAllOf(reg);
 }
 
 
 Register UseScratchRegisterScope::Acquire() {
-  VIXL_ASSERT(available_ != NULL);
-  VIXL_CHECK(!available_->IsEmpty());
-  Register reg = available_->GetFirstAvailableRegister();
-  available_->Remove(reg);
+  VIXL_ASSERT(masm_ != NULL);
+  Register reg = masm_->GetScratchRegisterList()->GetFirstAvailableRegister();
+  VIXL_CHECK(reg.IsValid());
+  masm_->GetScratchRegisterList()->Remove(reg);
   return reg;
 }
 
@@ -96,71 +105,78 @@ VRegister UseScratchRegisterScope::AcquireV(unsigned size_in_bits) {
 
 
 QRegister UseScratchRegisterScope::AcquireQ() {
-  VIXL_ASSERT(available_vfp_ != NULL);
-  VIXL_CHECK(!available_vfp_->IsEmpty());
-  QRegister reg = available_vfp_->GetFirstAvailableQRegister();
-  available_vfp_->Remove(reg);
+  VIXL_ASSERT(masm_ != NULL);
+  QRegister reg =
+      masm_->GetScratchVRegisterList()->GetFirstAvailableQRegister();
+  VIXL_CHECK(reg.IsValid());
+  masm_->GetScratchVRegisterList()->Remove(reg);
   return reg;
 }
 
 
 DRegister UseScratchRegisterScope::AcquireD() {
-  VIXL_ASSERT(available_vfp_ != NULL);
-  VIXL_CHECK(!available_vfp_->IsEmpty());
-  DRegister reg = available_vfp_->GetFirstAvailableDRegister();
-  available_vfp_->Remove(reg);
+  VIXL_ASSERT(masm_ != NULL);
+  DRegister reg =
+      masm_->GetScratchVRegisterList()->GetFirstAvailableDRegister();
+  VIXL_CHECK(reg.IsValid());
+  masm_->GetScratchVRegisterList()->Remove(reg);
   return reg;
 }
 
 
 SRegister UseScratchRegisterScope::AcquireS() {
-  VIXL_ASSERT(available_vfp_ != NULL);
-  VIXL_CHECK(!available_vfp_->IsEmpty());
-  SRegister reg = available_vfp_->GetFirstAvailableSRegister();
-  available_vfp_->Remove(reg);
+  VIXL_ASSERT(masm_ != NULL);
+  SRegister reg =
+      masm_->GetScratchVRegisterList()->GetFirstAvailableSRegister();
+  VIXL_CHECK(reg.IsValid());
+  masm_->GetScratchVRegisterList()->Remove(reg);
   return reg;
 }
 
 
 void UseScratchRegisterScope::Release(const Register& reg) {
-  VIXL_ASSERT(available_ != NULL);
+  VIXL_ASSERT(masm_ != NULL);
   VIXL_ASSERT(reg.IsValid());
-  VIXL_ASSERT(!available_->Includes(reg));
-  available_->Combine(reg);
+  VIXL_ASSERT(!masm_->GetScratchRegisterList()->Includes(reg));
+  masm_->GetScratchRegisterList()->Combine(reg);
 }
 
 
 void UseScratchRegisterScope::Release(const VRegister& reg) {
-  VIXL_ASSERT(available_vfp_ != NULL);
+  VIXL_ASSERT(masm_ != NULL);
   VIXL_ASSERT(reg.IsValid());
-  VIXL_ASSERT(!available_vfp_->IncludesAliasOf(reg));
-  available_vfp_->Combine(reg);
+  VIXL_ASSERT(!masm_->GetScratchVRegisterList()->IncludesAliasOf(reg));
+  masm_->GetScratchVRegisterList()->Combine(reg);
 }
 
 
 void UseScratchRegisterScope::Include(const RegisterList& list) {
-  VIXL_ASSERT(available_ != NULL);
+  VIXL_ASSERT(masm_ != NULL);
   RegisterList excluded_registers(sp, lr, pc);
   uint32_t mask = list.GetList() & ~excluded_registers.GetList();
-  available_->SetList(available_->GetList() | mask);
+  RegisterList* available = masm_->GetScratchRegisterList();
+  available->SetList(available->GetList() | mask);
 }
 
 
 void UseScratchRegisterScope::Include(const VRegisterList& list) {
-  VIXL_ASSERT(available_vfp_ != NULL);
-  available_vfp_->SetList(available_vfp_->GetList() | list.GetList());
+  VIXL_ASSERT(masm_ != NULL);
+  VRegisterList* available = masm_->GetScratchVRegisterList();
+  available->SetList(available->GetList() | list.GetList());
 }
 
 
 void UseScratchRegisterScope::Exclude(const RegisterList& list) {
-  VIXL_ASSERT(available_ != NULL);
-  available_->SetList(available_->GetList() & ~list.GetList());
+  VIXL_ASSERT(masm_ != NULL);
+  RegisterList* available = masm_->GetScratchRegisterList();
+  available->SetList(available->GetList() & ~list.GetList());
 }
 
 
 void UseScratchRegisterScope::Exclude(const VRegisterList& list) {
-  VIXL_ASSERT(available_vfp_ != NULL);
-  available_vfp_->SetList(available_vfp_->GetList() & ~list.GetList());
+  VIXL_ASSERT(masm_ != NULL);
+  VRegisterList* available = masm_->GetScratchVRegisterList();
+  available->SetList(available->GetList() & ~list.GetList());
 }
 
 
@@ -176,12 +192,9 @@ void UseScratchRegisterScope::Exclude(const Operand& operand) {
 
 
 void UseScratchRegisterScope::ExcludeAll() {
-  if (available_ != NULL) {
-    available_->SetList(0);
-  }
-  if (available_vfp_ != NULL) {
-    available_vfp_->SetList(0);
-  }
+  VIXL_ASSERT(masm_ != NULL);
+  masm_->GetScratchRegisterList()->SetList(0);
+  masm_->GetScratchVRegisterList()->SetList(0);
 }
 
 
@@ -206,14 +219,14 @@ void VeneerPoolManager::AddLabel(Label* label) {
   Label::ForwardReference& back = label->GetBackForwardRef();
   VIXL_ASSERT(back.GetMaxForwardDistance() >= kCbzCbnzRange);
   if (!label->IsInVeneerPool()) {
-    if (back.GetMaxForwardDistance() == kCbzCbnzRange) {
+    if (back.GetMaxForwardDistance() <= kNearLabelRange) {
       near_labels_.push_back(label);
       label->SetVeneerPoolManager(this, true);
     } else {
       far_labels_.push_back(label);
       label->SetVeneerPoolManager(this, false);
     }
-  } else if (back.GetMaxForwardDistance() == kCbzCbnzRange) {
+  } else if (back.GetMaxForwardDistance() <= kNearLabelRange) {
     if (!label->IsNear()) {
       far_labels_.remove(label);
       near_labels_.push_back(label);
@@ -1073,12 +1086,11 @@ void MacroAssembler::Delegate(InstructionType type,
                               Condition cond,
                               Register rn,
                               const Operand& operand) {
-  // movt, sxtb16, teq, uxtb16
   VIXL_ASSERT((type == kMovt) || (type == kSxtb16) || (type == kTeq) ||
               (type == kUxtb16));
 
   if (type == kMovt) {
-    VIXL_ABORT_WITH_MSG("`Movt` expects a 16-bit immediate.");
+    VIXL_ABORT_WITH_MSG("`Movt` expects a 16-bit immediate.\n");
   }
 
   // This delegate only supports teq with immediates.
@@ -1101,7 +1113,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               EncodingSize size,
                               Register rn,
                               const Operand& operand) {
-  // cmn cmp mov movs mvn mvns sxtb sxth tst uxtb uxth
   CONTEXT_SCOPE;
   VIXL_ASSERT(size.IsBest());
   VIXL_ASSERT((type == kCmn) || (type == kCmp) || (type == kMov) ||
@@ -1214,8 +1225,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rd,
                               Register rn,
                               const Operand& operand) {
-  // orn orns pkhbt pkhtb rsc rscs sxtab sxtab16 sxtah uxtab uxtab16 uxtah
-
   if ((type == kSxtab) || (type == kSxtab16) || (type == kSxtah) ||
       (type == kUxtab) || (type == kUxtab16) || (type == kUxtah) ||
       (type == kPkhbt) || (type == kPkhtb)) {
@@ -1296,6 +1305,27 @@ void MacroAssembler::Delegate(InstructionType type,
     return;
   }
 
+  if (operand.IsImmediate()) {
+    // If the immediate can be encoded when inverted, turn Orn into Orr.
+    // Otherwise rely on HandleOutOfBoundsImmediate to generate a series of
+    // mov.
+    int32_t imm = operand.GetSignedImmediate();
+    if (((type == kOrn) || (type == kOrns)) && IsModifiedImmediate(~imm)) {
+      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+      switch (type) {
+        case kOrn:
+          orr(cond, rd, rn, ~imm);
+          return;
+        case kOrns:
+          orrs(cond, rd, rn, ~imm);
+          return;
+        default:
+          VIXL_UNREACHABLE();
+          break;
+      }
+    }
+  }
+
   // A32 does not have a Orn instruction, negate the rhs input and turn it into
   // a Orr.
   if (IsUsingA32() && ((type == kOrn) || (type == kOrns))) {
@@ -1323,37 +1353,17 @@ void MacroAssembler::Delegate(InstructionType type,
     orr(cond, rd, rn, scratch);
     return;
   }
-  if (operand.IsImmediate()) {
-    int32_t imm = operand.GetSignedImmediate();
 
-    // If the immediate can be encoded when inverted, turn Orn into Orr.
-    // Otherwise rely on HandleOutOfBoundsImmediate to generate a series of
-    // mov.
-    if (IsUsingT32() && ((type == kOrn) || (type == kOrns)) &&
-        ImmediateT32::IsImmediateT32(~imm)) {
-      VIXL_ASSERT((type == kOrn) || (type == kOrns));
-      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
-      switch (type) {
-        case kOrn:
-          orr(cond, rd, rn, ~imm);
-          return;
-        case kOrns:
-          orrs(cond, rd, rn, ~imm);
-          return;
-        default:
-          VIXL_UNREACHABLE();
-          break;
-      }
-    } else {
-      UseScratchRegisterScope temps(this);
-      // Allow using the destination as a scratch register if possible.
-      if (!rd.Is(rn)) temps.Include(rd);
-      Register scratch = temps.Acquire();
-      HandleOutOfBoundsImmediate(cond, scratch, imm);
-      CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
-      (this->*instruction)(cond, rd, rn, scratch);
-      return;
-    }
+  if (operand.IsImmediate()) {
+    UseScratchRegisterScope temps(this);
+    // Allow using the destination as a scratch register if possible.
+    if (!rd.Is(rn)) temps.Include(rd);
+    Register scratch = temps.Acquire();
+    int32_t imm = operand.GetSignedImmediate();
+    HandleOutOfBoundsImmediate(cond, scratch, imm);
+    CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
+    (this->*instruction)(cond, rd, rn, scratch);
+    return;
   }
   Assembler::Delegate(type, instruction, cond, rd, rn, operand);
 }
@@ -1390,9 +1400,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rd,
                               Register rn,
                               const Operand& operand) {
-  // adc adcs add adds and_ ands asr asrs bic bics eor eors lsl lsls lsr lsrs
-  // orr orrs ror rors rsb rsbs sbc sbcs sub subs
-
   VIXL_ASSERT(
       (type == kAdc) || (type == kAdcs) || (type == kAdd) || (type == kAdds) ||
       (type == kAnd) || (type == kAnds) || (type == kAsr) || (type == kAsrs) ||
@@ -1568,7 +1575,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               InstructionRL instruction,
                               Register rn,
                               Label* label) {
-  // cbz cbnz
   VIXL_ASSERT((type == kCbz) || (type == kCbnz));
 
   CONTEXT_SCOPE;
@@ -2058,7 +2064,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               EncodingSize size,
                               Register rd,
                               const MemOperand& operand) {
-  // ldr ldrb ldrh ldrsb ldrsh str strb strh
   CONTEXT_SCOPE;
   VIXL_ASSERT(size.IsBest());
   VIXL_ASSERT((type == kLdr) || (type == kLdrb) || (type == kLdrh) ||
@@ -2274,8 +2279,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               Register rt,
                               Register rt2,
                               const MemOperand& operand) {
-  // ldaexd, ldrd, ldrexd, stlex, stlexb, stlexh, strd, strex, strexb, strexh
-
   if ((type == kLdaexd) || (type == kLdrexd) || (type == kStlex) ||
       (type == kStlexb) || (type == kStlexh) || (type == kStrex) ||
       (type == kStrexb) || (type == kStrexh)) {
@@ -2454,7 +2457,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               DataType dt,
                               SRegister rd,
                               const MemOperand& operand) {
-  // vldr.32 vstr.32
   CONTEXT_SCOPE;
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
@@ -2528,7 +2530,6 @@ void MacroAssembler::Delegate(InstructionType type,
                               DataType dt,
                               DRegister rd,
                               const MemOperand& operand) {
-  // vldr.64 vstr.64
   CONTEXT_SCOPE;
   if (operand.IsImmediate()) {
     const Register& rn = operand.GetBaseRegister();
