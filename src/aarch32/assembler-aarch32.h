@@ -70,39 +70,103 @@ class Assembler : public internal::AssemblerBase {
                 const Label::LabelEmitOperator& op);
 
  public:
-  explicit Assembler(InstructionSet isa = A32)
+  class AllowUnpredictableScope {
+    Assembler* assembler_;
+    bool old_;
+
+   public:
+    explicit AllowUnpredictableScope(Assembler* assembler)
+        : assembler_(assembler), old_(assembler->allow_unpredictable_) {
+      assembler_->allow_unpredictable_ = true;
+    }
+    ~AllowUnpredictableScope() { assembler_->allow_unpredictable_ = old_; }
+  };
+  class AllowStronglyDiscouragedScope {
+    Assembler* assembler_;
+    bool old_;
+
+   public:
+    explicit AllowStronglyDiscouragedScope(Assembler* assembler)
+        : assembler_(assembler), old_(assembler->allow_strongly_discouraged_) {
+      assembler_->allow_strongly_discouraged_ = true;
+    }
+    ~AllowStronglyDiscouragedScope() {
+      assembler_->allow_strongly_discouraged_ = old_;
+    }
+  };
+
+  explicit Assembler(InstructionSet isa = kDefaultISA)
       : isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
         allow_unpredictable_(false),
-        allow_strongly_discouraged_(false) {}
-  explicit Assembler(size_t capacity, InstructionSet isa = A32)
+        allow_strongly_discouraged_(false) {
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    // Avoid compiler warning.
+    USE(isa_);
+    VIXL_ASSERT(isa == A32);
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    USE(isa_);
+    VIXL_ASSERT(isa == T32);
+#endif
+  }
+  explicit Assembler(size_t capacity, InstructionSet isa = kDefaultISA)
       : AssemblerBase(capacity),
         isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
         allow_unpredictable_(false),
-        allow_strongly_discouraged_(false) {}
-  Assembler(byte* buffer, size_t capacity, InstructionSet isa = A32)
+        allow_strongly_discouraged_(false) {
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    VIXL_ASSERT(isa == A32);
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    VIXL_ASSERT(isa == T32);
+#endif
+  }
+  Assembler(byte* buffer, size_t capacity, InstructionSet isa = kDefaultISA)
       : AssemblerBase(buffer, capacity),
         isa_(isa),
         first_condition_(al),
         it_mask_(0),
         has_32_dregs_(true),
         allow_unpredictable_(false),
-        allow_strongly_discouraged_(false) {}
+        allow_strongly_discouraged_(false) {
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    VIXL_ASSERT(isa == A32);
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    VIXL_ASSERT(isa == T32);
+#endif
+  }
   virtual ~Assembler() {}
+
   void UseInstructionSet(InstructionSet isa) {
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    USE(isa);
+    VIXL_ASSERT(isa == A32);
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    USE(isa);
+    VIXL_ASSERT(isa == T32);
+#else
     VIXL_ASSERT((isa_ == isa) || (GetCursorOffset() == 0));
     isa_ = isa;
+#endif
   }
+
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+  InstructionSet GetInstructionSetInUse() const { return A32; }
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+  InstructionSet GetInstructionSetInUse() const { return T32; }
+#else
   InstructionSet GetInstructionSetInUse() const { return isa_; }
+#endif
+
   void UseT32() { UseInstructionSet(T32); }
   void UseA32() { UseInstructionSet(A32); }
   bool IsUsingT32() const { return GetInstructionSetInUse() == T32; }
   bool IsUsingA32() const { return GetInstructionSetInUse() == A32; }
+
   void SetIT(Condition first_condition, uint16_t it_mask) {
     VIXL_ASSERT(it_mask_ == 0);
     first_condition_ = first_condition;
@@ -5997,45 +6061,9 @@ class Assembler : public internal::AssemblerBase {
                               std::string("' instruction.\n"));
     VIXL_ABORT_WITH_MSG(error_message.c_str());
   }
-  bool AllowUnpredictable() { return allow_unpredictable_; }
-  bool AllowStronglyDiscouraged() { return allow_strongly_discouraged_; }
-
-  // Allow the following scopes to modify the internal allow_unpredictable_ and
-  // allow_strongly_discouraged_ members.
-  friend class AllowUnpredictableScope;
-  friend class AllowStronglyDiscouragedScope;
-};
-
-// Temporarily allow generating UNPREDICTABLE instruction. Using this scope is
-// only allowed when using the assembler directly.
-class AllowUnpredictableScope {
-  Assembler* assembler_;
-  bool old_;
-
- public:
-  explicit AllowUnpredictableScope(Assembler* assembler)
-      : assembler_(assembler), old_(assembler->allow_unpredictable_) {
-    VIXL_ASSERT(assembler_->AllowAssembler());
-    assembler_->allow_unpredictable_ = true;
-  }
-  ~AllowUnpredictableScope() { assembler_->allow_unpredictable_ = old_; }
-};
-
-// Temporarily allow generating strongly discouraged instructions. For example,
-// this includes T32 conditional instructions that are not otherwise conditional
-// in A32. Using this scope is only allowed when using the assembler directly.
-class AllowStronglyDiscouragedScope {
-  Assembler* assembler_;
-  bool old_;
-
- public:
-  explicit AllowStronglyDiscouragedScope(Assembler* assembler)
-      : assembler_(assembler), old_(assembler->allow_strongly_discouraged_) {
-    VIXL_ASSERT(assembler_->AllowAssembler());
-    assembler_->allow_strongly_discouraged_ = true;
-  }
-  ~AllowStronglyDiscouragedScope() {
-    assembler_->allow_strongly_discouraged_ = old_;
+  virtual bool AllowUnpredictable() { return allow_unpredictable_; }
+  virtual bool AllowStronglyDiscouraged() {
+    return allow_strongly_discouraged_;
   }
 };
 
