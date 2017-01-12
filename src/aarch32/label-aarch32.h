@@ -70,14 +70,32 @@ class Label {
 
   class ForwardReference {
    public:
-    ForwardReference(int32_t location, const LabelEmitOperator& op, bool t32)
-        : location_(location), op_(op), is_t32_(t32), is_branch_(false) {}
+    ForwardReference(int32_t location,
+                     const LabelEmitOperator& op,
+                     InstructionSet isa)
+        : location_(location), op_(op), isa_(isa), is_branch_(false) {
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+      USE(isa_);
+      VIXL_ASSERT(isa_ == A32);
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+      USE(isa_);
+      VIXL_ASSERT(isa == T32);
+#endif
+    }
     Offset GetMaxForwardDistance() const { return op_.GetMaxForwardDistance(); }
     int32_t GetLocation() const { return location_; }
     uint32_t GetStatePCOffset() const {
-      return is_t32_ ? kT32PcDelta : kA32PcDelta;
+      return IsUsingT32() ? kT32PcDelta : kA32PcDelta;
     }
-    bool IsUsingT32() const { return is_t32_; }
+
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    bool IsUsingT32() const { return false; }
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    bool IsUsingT32() const { return true; }
+#else
+    bool IsUsingT32() const { return isa_ == T32; }
+#endif
+
     bool IsBranch() const { return is_branch_; }
     void SetIsBranch() { is_branch_ = true; }
     const LabelEmitOperator& GetEmitOperator() const { return op_; }
@@ -93,7 +111,7 @@ class Label {
    private:
     int32_t location_;
     const LabelEmitOperator& op_;
-    bool is_t32_;
+    InstructionSet isa_;
     bool is_branch_;
   };
 
@@ -123,7 +141,7 @@ class Label {
         pc_offset_(0),
         is_bound_(false),
         minus_zero_(false),
-        is_t32_(false),
+        isa_(kDefaultISA),
         referenced_(false),
         veneer_pool_manager_(NULL),
         is_near_(false),
@@ -133,7 +151,7 @@ class Label {
         pc_offset_(pc_offset),
         is_bound_(true),
         minus_zero_(minus_zero),
-        is_t32_(false),
+        isa_(kDefaultISA),
         referenced_(false),
         veneer_pool_manager_(NULL),
         is_near_(false),
@@ -145,13 +163,24 @@ class Label {
     }
 #endif
   }
+
+#undef DEFAULT_IS_T32
+
   bool IsBound() const { return is_bound_; }
   bool HasForwardReference() const { return !forward_.empty(); }
-  void Bind(Offset offset, bool isT32) {
+  void Bind(Offset offset, InstructionSet isa) {
     VIXL_ASSERT(!IsBound());
+    USE(isa);
+    USE(isa_);
     imm_offset_ = offset;
     is_bound_ = true;
-    is_t32_ = isT32;
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    VIXL_ASSERT(isa == A32);
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    VIXL_ASSERT(isa == T32);
+#else
+    isa_ = isa;
+#endif
   }
   uint32_t GetPcOffset() const { return pc_offset_; }
   Offset GetLocation() const {
@@ -159,8 +188,14 @@ class Label {
     return imm_offset_ + static_cast<Offset>(pc_offset_);
   }
   bool IsUsingT32() const {
-    VIXL_ASSERT(IsBound());  // Must be bound to know if it's a T32 label
-    return is_t32_;
+    VIXL_ASSERT(IsBound());  // Must be bound to know its ISA.
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+    return false;
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+    return true;
+#else
+    return isa_ == T32;
+#endif
   }
   bool IsMinusZero() const {
     VIXL_ASSERT(IsBound());
@@ -185,10 +220,10 @@ class Label {
     return AlignDown(GetCheckpoint(), byte_align);
   }
   void AddForwardRef(int32_t instr_location,
-                     bool isT32,
+                     InstructionSet isa,
                      const LabelEmitOperator& op) {
     VIXL_ASSERT(referenced_);
-    forward_.push_back(ForwardReference(instr_location, op, isT32));
+    forward_.push_back(ForwardReference(instr_location, op, isa));
   }
 
   ForwardRefList::iterator GetFirstForwardRef() { return forward_.begin(); }
@@ -252,8 +287,8 @@ class Label {
   bool is_bound_;
   // Special flag for 'pc - 0'.
   bool minus_zero_;
-  // Is the label in T32 state.
-  bool is_t32_;
+  // Which ISA is the label in.
+  InstructionSet isa_;
   // True if the label has been used at least once.
   bool referenced_;
   // Not null if the label is currently inserted in the veneer pool.
@@ -272,6 +307,8 @@ class VeneerPoolManager {
       : masm_(masm),
         near_checkpoint_(Label::kMaxOffset),
         far_checkpoint_(Label::kMaxOffset),
+        max_near_checkpoint_(0),
+        near_checkpoint_margin_(0),
         last_label_reference_offset_(0),
         monitor_(0) {}
   bool IsEmpty() const {
@@ -287,7 +324,8 @@ class VeneerPoolManager {
     Label::Offset tmp =
         far_checkpoint_ - static_cast<Label::Offset>(veneer_max_size);
     // Make room for a branch over the pools.
-    return std::min(near_checkpoint_, tmp) - kMaxInstructionSizeInBytes;
+    return std::min(near_checkpoint_, tmp) - kMaxInstructionSizeInBytes -
+           near_checkpoint_margin_;
   }
   size_t GetMaxSize() const {
     return (near_labels_.size() + far_labels_.size()) *
@@ -307,11 +345,17 @@ class VeneerPoolManager {
   // Lists of all unbound labels which are used by a branch instruction.
   std::list<Label*> near_labels_;
   std::list<Label*> far_labels_;
-  // Max offset in the code buffer where the veneer needs to be emitted.
+  // Offset in the code buffer after which the veneer needs to be emitted.
+  // It's the lowest checkpoint value in the associated list.
   // A default value of Label::kMaxOffset means that the checkpoint is
-  // invalid.
+  // invalid (no entry in the list).
   Label::Offset near_checkpoint_;
   Label::Offset far_checkpoint_;
+  // Highest checkpoint value for the near list.
+  Label::Offset max_near_checkpoint_;
+  // Margin we have to take to ensure that 16 bit branch instructions will be
+  // able to generate 32 bit veneers.
+  uint32_t near_checkpoint_margin_;
   // Offset where the last reference to a label has been added to the pool.
   Label::Offset last_label_reference_offset_;
   // Indicates whether the emission of this pool is blocked.

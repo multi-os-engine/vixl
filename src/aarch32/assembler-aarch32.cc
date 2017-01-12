@@ -81,7 +81,7 @@ void Assembler::PerformCheckIT(Condition condition) {
 
 void Assembler::BindHelper(Label* label) {
   VIXL_ASSERT(!label->IsBound());
-  label->Bind(GetCursorOffset(), IsUsingT32());
+  label->Bind(GetCursorOffset(), GetInstructionSetInUse());
 
   for (Label::ForwardRefList::iterator ref = label->GetFirstForwardRef();
        ref != label->GetEndForwardRef();
@@ -103,7 +103,7 @@ uint32_t Assembler::Link(uint32_t instr,
                      GetCursorOffset() + GetArchitectureStatePCOffset(),
                      label);
   }
-  label->AddForwardRef(GetCursorOffset(), IsUsingT32(), op);
+  label->AddForwardRef(GetCursorOffset(), GetInstructionSetInUse(), op);
   return instr;
 }
 
@@ -3477,13 +3477,16 @@ void Assembler::clz(Condition cond, Register rd, Register rm) {
   CheckIT(cond);
   if (IsUsingT32()) {
     // CLZ{<c>}{<q>} <Rd>, <Rm> ; T1
-    EmitT32_32(0xfab0f080U | (rd.GetCode() << 8) | rm.GetCode() |
-               (rm.GetCode() << 16));
-    AdvanceIT();
-    return;
+    if (((!rd.IsPC() && !rm.IsPC()) || AllowUnpredictable())) {
+      EmitT32_32(0xfab0f080U | (rd.GetCode() << 8) | rm.GetCode() |
+                 (rm.GetCode() << 16));
+      AdvanceIT();
+      return;
+    }
   } else {
     // CLZ{<c>}{<q>} <Rd>, <Rm> ; A1
-    if (cond.IsNotNever()) {
+    if (cond.IsNotNever() &&
+        ((!rd.IsPC() && !rm.IsPC()) || AllowUnpredictable())) {
       EmitA32(0x016f0f10U | (cond.GetCondition() << 28) | (rd.GetCode() << 12) |
               rm.GetCode());
       return;

@@ -36,6 +36,24 @@
 namespace vixl {
 namespace aarch32 {
 
+// We use a subclass to access the protected `ExactAssemblyScope` constructor
+// giving us control over the pools, and make the constructor private to limit
+// usage to code paths emitting pools.
+class ExactAssemblyScopeWithoutPoolsCheck : public ExactAssemblyScope {
+ private:
+  ExactAssemblyScopeWithoutPoolsCheck(MacroAssembler* masm,
+                                      size_t size,
+                                      SizePolicy size_policy = kExactSize)
+      : ExactAssemblyScope(masm,
+                           size,
+                           size_policy,
+                           ExactAssemblyScope::kIgnorePools) {}
+
+  friend class MacroAssembler;
+  friend class VeneerPoolManager;
+};
+
+
 void UseScratchRegisterScope::Open(MacroAssembler* masm) {
   VIXL_ASSERT(masm_ == NULL);
   VIXL_ASSERT(masm != NULL);
@@ -211,8 +229,8 @@ void VeneerPoolManager::AddLabel(Label* label) {
       // We found two 16 bit forward branches generated one after the other.
       // That means that the pool will grow by one 32-bit branch when
       // the cursor offset will move forward by only one 16-bit branch.
-      // Update the cbz/cbnz checkpoint to manage the difference.
-      near_checkpoint_ -=
+      // Update the near checkpoint margin to manage the difference.
+      near_checkpoint_margin_ +=
           k32BitT32InstructionSizeInBytes - k16BitT32InstructionSizeInBytes;
     }
   }
@@ -240,6 +258,15 @@ void VeneerPoolManager::AddLabel(Label* label) {
   Label::Offset tmp = label->GetCheckpoint();
   if (label->IsNear()) {
     if (near_checkpoint_ > tmp) near_checkpoint_ = tmp;
+    if (max_near_checkpoint_ >= tmp) {
+      // This checkpoint is before some already in the near list. That means
+      // that the veneer (if needed) will be emitted before some of the veneers
+      // already in the list. We adjust the margin with the size of a veneer
+      // branch.
+      near_checkpoint_margin_ += k32BitT32InstructionSizeInBytes;
+    } else {
+      max_near_checkpoint_ = tmp;
+    }
   } else {
     if (far_checkpoint_ > tmp) far_checkpoint_ = tmp;
   }
@@ -303,17 +330,22 @@ void VeneerPoolManager::EmitLabel(Label* label, Label::Offset emitted_target) {
     far_checkpoint_ = std::min(far_checkpoint_, label_checkpoint);
   }
   // Generate the veneer.
-  masm_->B(label);
+  ExactAssemblyScopeWithoutPoolsCheck guard(masm_,
+                                            kMaxInstructionSizeInBytes,
+                                            ExactAssemblyScope::kMaximumSize);
+  masm_->b(label);
+  masm_->AddBranchLabel(label);
 }
 
 
 void VeneerPoolManager::Emit(Label::Offset target) {
   VIXL_ASSERT(!IsBlocked());
   // Sort labels (regarding their checkpoint) to avoid that a veneer
-  // becomes out of range. Near labels are always sorted as it holds only one
-  // range.
+  // becomes out of range.
+  near_labels_.sort(Label::CompareLabels);
   far_labels_.sort(Label::CompareLabels);
   // To avoid too many veneers, generate veneers which will be necessary soon.
+  target += static_cast<int>(GetMaxSize()) + near_checkpoint_margin_;
   static const size_t kVeneerEmissionMargin = 1 * KBytes;
   // To avoid too many veneers, use generated veneers for other not too far
   // uses.
@@ -323,6 +355,8 @@ void VeneerPoolManager::Emit(Label::Offset target) {
   // Reset the checkpoints. They will be computed again in the loop.
   near_checkpoint_ = Label::kMaxOffset;
   far_checkpoint_ = Label::kMaxOffset;
+  max_near_checkpoint_ = 0;
+  near_checkpoint_margin_ = 0;
   for (std::list<Label*>::iterator it = near_labels_.begin();
        it != near_labels_.end();) {
     Label* label = *it;
@@ -366,69 +400,43 @@ void VeneerPoolManager::Emit(Label::Offset target) {
 }
 
 
-// We use a subclass to access the protected `ExactAssemblyScope` constructor
-// giving us control over the pools, and make the constructor private to limit
-// usage to code paths emitting pools.
-class ExactAssemblyScopeWithoutPoolsCheck : public ExactAssemblyScope {
- private:
-  ExactAssemblyScopeWithoutPoolsCheck(MacroAssembler* masm,
-                                      size_t size,
-                                      SizePolicy size_policy = kExactSize)
-      : ExactAssemblyScope(masm,
-                           size,
-                           size_policy,
-                           ExactAssemblyScope::kIgnorePools) {}
-
-  friend void MacroAssembler::EmitLiteralPool(LiteralPool* const literal_pool,
-                                              EmitOption option);
-
-  // TODO: `PerformEnsureEmit` is `private`, so we have to make the
-  // `MacroAssembler` a friend.
-  friend class MacroAssembler;
-};
-
-
 void MacroAssembler::PerformEnsureEmit(Label::Offset target, uint32_t size) {
-  if (!doing_veneer_pool_generation_) {
-    EmitOption option = kBranchRequired;
-    Label after_pools;
-    Label::Offset literal_target = GetTargetForLiteralEmission();
-    VIXL_ASSERT(literal_target >= 0);
-    bool generate_veneers = target > veneer_pool_manager_.GetCheckpoint();
-    if (target > literal_target) {
-      // We will generate the literal pool. Generate all the veneers which
-      // would become out of range.
-      size_t literal_pool_size = literal_pool_manager_.GetLiteralPoolSize() +
-                                 kMaxInstructionSizeInBytes;
-      VIXL_ASSERT(IsInt32(literal_pool_size));
-      Label::Offset veneers_target =
-          AlignUp(target + static_cast<Label::Offset>(literal_pool_size), 4);
-      VIXL_ASSERT(veneers_target >= 0);
-      if (veneers_target > veneer_pool_manager_.GetCheckpoint()) {
-        generate_veneers = true;
-      }
+  EmitOption option = kBranchRequired;
+  Label after_pools;
+  Label::Offset literal_target = GetTargetForLiteralEmission();
+  VIXL_ASSERT(literal_target >= 0);
+  bool generate_veneers = target > veneer_pool_manager_.GetCheckpoint();
+  if (target > literal_target) {
+    // We will generate the literal pool. Generate all the veneers which
+    // would become out of range.
+    size_t literal_pool_size =
+        literal_pool_manager_.GetLiteralPoolSize() + kMaxInstructionSizeInBytes;
+    VIXL_ASSERT(IsInt32(literal_pool_size));
+    Label::Offset veneers_target =
+        AlignUp(target + static_cast<Label::Offset>(literal_pool_size), 4);
+    VIXL_ASSERT(veneers_target >= 0);
+    if (veneers_target > veneer_pool_manager_.GetCheckpoint()) {
+      generate_veneers = true;
     }
-    if (generate_veneers) {
-      {
-        ExactAssemblyScopeWithoutPoolsCheck
-            guard(this,
-                  kMaxInstructionSizeInBytes,
-                  ExactAssemblyScope::kMaximumSize);
-        b(&after_pools);
-      }
-      doing_veneer_pool_generation_ = true;
-      veneer_pool_manager_.Emit(target);
-      doing_veneer_pool_generation_ = false;
-      option = kNoBranchRequired;
-    }
-    // Check if the macro-assembler's internal literal pool should be emitted
-    // to avoid any overflow. If we already generated the veneers, we can
-    // emit the pool (the branch is already done).
-    if ((target > literal_target) || (option == kNoBranchRequired)) {
-      EmitLiteralPool(option);
-    }
-    BindHelper(&after_pools);
   }
+  if (generate_veneers) {
+    {
+      ExactAssemblyScopeWithoutPoolsCheck
+          guard(this,
+                kMaxInstructionSizeInBytes,
+                ExactAssemblyScope::kMaximumSize);
+      b(&after_pools);
+    }
+    veneer_pool_manager_.Emit(target);
+    option = kNoBranchRequired;
+  }
+  // Check if the macro-assembler's internal literal pool should be emitted
+  // to avoid any overflow. If we already generated the veneers, we can
+  // emit the pool (the branch is already done).
+  if ((target > literal_target) || (option == kNoBranchRequired)) {
+    EmitLiteralPool(option);
+  }
+  BindHelper(&after_pools);
   if (GetBuffer()->IsManaged()) {
     bool grow_requested;
     GetBuffer()->EnsureSpaceFor(size, &grow_requested);
@@ -693,6 +701,11 @@ MemOperand MacroAssembler::MemOperandComputationHelper(
 
   uint32_t load_store_offset = offset & extra_offset_mask;
   uint32_t add_offset = offset & ~extra_offset_mask;
+  if ((add_offset != 0) &&
+      (IsModifiedImmediate(offset) || IsModifiedImmediate(-offset))) {
+    load_store_offset = 0;
+    add_offset = offset;
+  }
 
   if (base.IsPC()) {
     // Special handling for PC bases. We must read the PC in the first
@@ -1393,6 +1406,29 @@ void MacroAssembler::Delegate(InstructionType type,
 }
 
 
+bool MacroAssembler::GenerateSplitInstruction(
+    InstructionCondSizeRROp instruction,
+    Condition cond,
+    Register rd,
+    Register rn,
+    uint32_t imm,
+    uint32_t mask) {
+  uint32_t high = imm & ~mask;
+  if (!IsModifiedImmediate(high) && !rn.IsPC()) return false;
+  // If high is a modified immediate, we can perform the operation with
+  // only 2 instructions.
+  // Else, if rn is PC, we want to avoid moving PC into a temporary.
+  // Therefore, we also use the pattern even if the second call may
+  // generate 3 instructions.
+  uint32_t low = imm & mask;
+  CodeBufferCheckScope scope(this,
+                             (rn.IsPC() ? 4 : 2) * kMaxInstructionSizeInBytes);
+  (this->*instruction)(cond, Best, rd, rn, low);
+  (this->*instruction)(cond, Best, rd, rd, high);
+  return true;
+}
+
+
 void MacroAssembler::Delegate(InstructionType type,
                               InstructionCondSizeRROp instruction,
                               Condition cond,
@@ -1511,10 +1547,45 @@ void MacroAssembler::Delegate(InstructionType type,
         return;
       }
     }
+
+    // When rn is PC, only handle negative offsets. The correct way to handle
+    // positive offsets isn't clear; does the user want the offset from the
+    // start of the macro, or from the end (to allow a certain amount of space)?
+    // When type is Add or Sub, imm is always positive (imm < 0 has just been
+    // handled and imm == 0 would have been generated without the need of a
+    // delegate). Therefore, only add to PC is forbidden here.
+    if ((((type == kAdd) && !rn.IsPC()) || (type == kSub)) &&
+        (IsUsingA32() || (!rd.IsPC() && !rn.IsPC()))) {
+      VIXL_ASSERT(imm > 0);
+      // Try to break the constant into two modified immediates.
+      // For T32 also try to break the constant into one imm12 and one modified
+      // immediate. Count the trailing zeroes and get the biggest even value.
+      int trailing_zeroes = CountTrailingZeros(imm) & ~1u;
+      uint32_t mask = ((trailing_zeroes < 4) && IsUsingT32())
+                          ? 0xfff
+                          : (0xff << trailing_zeroes);
+      if (GenerateSplitInstruction(instruction, cond, rd, rn, imm, mask)) {
+        return;
+      }
+      InstructionCondSizeRROp asmcb = NULL;
+      switch (type) {
+        case kAdd:
+          asmcb = &Assembler::sub;
+          break;
+        case kSub:
+          asmcb = &Assembler::add;
+          break;
+        default:
+          VIXL_UNREACHABLE();
+      }
+      if (GenerateSplitInstruction(asmcb, cond, rd, rn, -imm, mask)) {
+        return;
+      }
+    }
+
     UseScratchRegisterScope temps(this);
     // Allow using the destination as a scratch register if possible.
     if (!rd.Is(rn)) temps.Include(rd);
-
     if (rn.IsPC()) {
       // If we're reading the PC, we need to do it in the first instruction,
       // otherwise we'll read the wrong value. We rely on this to handle the
@@ -2073,21 +2144,15 @@ void MacroAssembler::Delegate(InstructionType type,
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
     int32_t offset = operand.GetOffsetImmediate();
-    uint32_t mask = GetOffsetMask(type, addrmode);
-    bool negative;
-    // Try to maximize the offset use by the MemOperand (load_store_offset).
-    // Add or subtract the part which can't be used by the MemOperand
-    // (add_sub_offset).
-    int32_t add_sub_offset;
-    int32_t load_store_offset;
-    load_store_offset = offset & mask;
-    if (offset >= 0) {
-      negative = false;
-      add_sub_offset = offset & ~mask;
-    } else {
-      negative = true;
-      add_sub_offset = -offset & ~mask;
-      if (load_store_offset > 0) add_sub_offset += mask + 1;
+    uint32_t extra_offset_mask = GetOffsetMask(type, addrmode);
+    // Try to maximize the offset used by the MemOperand (load_store_offset).
+    // Add the part which can't be used by the MemOperand (add_offset).
+    uint32_t load_store_offset = offset & extra_offset_mask;
+    uint32_t add_offset = offset & ~extra_offset_mask;
+    if ((add_offset != 0) &&
+        (IsModifiedImmediate(offset) || IsModifiedImmediate(-offset))) {
+      load_store_offset = 0;
+      add_offset = offset;
     }
     switch (addrmode) {
       case PreIndex:
@@ -2099,11 +2164,7 @@ void MacroAssembler::Delegate(InstructionType type,
           //   ldr r0, [r1]
           {
             CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
-            if (negative) {
-              sub(cond, rn, rn, add_sub_offset);
-            } else {
-              add(cond, rn, rn, add_sub_offset);
-            }
+            add(cond, rn, rn, add_offset);
           }
           {
             CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
@@ -2129,11 +2190,7 @@ void MacroAssembler::Delegate(InstructionType type,
         //   ldr r0, [r0]
         {
           CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
-          if (negative) {
-            sub(cond, scratch, rn, add_sub_offset);
-          } else {
-            add(cond, scratch, rn, add_sub_offset);
-          }
+          add(cond, scratch, rn, add_offset);
         }
         {
           CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
@@ -2162,11 +2219,7 @@ void MacroAssembler::Delegate(InstructionType type,
           }
           {
             CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
-            if (negative) {
-              sub(cond, rn, rn, add_sub_offset);
-            } else {
-              add(cond, rn, rn, add_sub_offset);
-            }
+            add(cond, rn, rn, add_offset);
           }
           return;
         }
@@ -2313,6 +2366,16 @@ void MacroAssembler::Delegate(InstructionType type,
     const Register& rn = operand.GetBaseRegister();
     AddrMode addrmode = operand.GetAddrMode();
     int32_t offset = operand.GetOffsetImmediate();
+    uint32_t extra_offset_mask = GetOffsetMask(type, addrmode);
+    // Try to maximize the offset used by the MemOperand (load_store_offset).
+    // Add the part which can't be used by the MemOperand (add_offset).
+    uint32_t load_store_offset = offset & extra_offset_mask;
+    uint32_t add_offset = offset & ~extra_offset_mask;
+    if ((add_offset != 0) &&
+        (IsModifiedImmediate(offset) || IsModifiedImmediate(-offset))) {
+      load_store_offset = 0;
+      add_offset = offset;
+    }
     switch (addrmode) {
       case PreIndex: {
         // Allow using the destinations as a scratch registers if possible.
@@ -2328,11 +2391,14 @@ void MacroAssembler::Delegate(InstructionType type,
         //   ldrd r0, r1, [r2]
         {
           CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
-          add(cond, rn, rn, offset);
+          add(cond, rn, rn, add_offset);
         }
         {
           CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+          (this->*instruction)(cond,
+                               rt,
+                               rt2,
+                               MemOperand(rn, load_store_offset, PreIndex));
         }
         return;
       }
@@ -2350,11 +2416,14 @@ void MacroAssembler::Delegate(InstructionType type,
         //   ldrd r0, r1, [r0]
         {
           CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
-          add(cond, scratch, rn, offset);
+          add(cond, scratch, rn, add_offset);
         }
         {
           CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
-          (this->*instruction)(cond, rt, rt2, MemOperand(scratch, Offset));
+          (this->*instruction)(cond,
+                               rt,
+                               rt2,
+                               MemOperand(scratch, load_store_offset));
         }
         return;
       }
@@ -2369,11 +2438,14 @@ void MacroAssembler::Delegate(InstructionType type,
           //   add r2, ip
           {
             CodeBufferCheckScope scope(this, kMaxInstructionSizeInBytes);
-            (this->*instruction)(cond, rt, rt2, MemOperand(rn, Offset));
+            (this->*instruction)(cond,
+                                 rt,
+                                 rt2,
+                                 MemOperand(rn, load_store_offset, PostIndex));
           }
           {
             CodeBufferCheckScope scope(this, 3 * kMaxInstructionSizeInBytes);
-            add(cond, rn, rn, offset);
+            add(cond, rn, rn, add_offset);
           }
           return;
         }
