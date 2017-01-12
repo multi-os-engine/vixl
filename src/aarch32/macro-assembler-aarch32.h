@@ -455,15 +455,14 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
 
  public:
-  explicit MacroAssembler(InstructionSet isa = A32)
+  explicit MacroAssembler(InstructionSet isa = kDefaultISA)
       : Assembler(isa),
         available_(r12),
         current_scratch_scope_(NULL),
         checkpoint_(Label::kMaxOffset),
         literal_pool_manager_(this),
         veneer_pool_manager_(this),
-        generate_simulator_code_(VIXL_AARCH32_GENERATE_SIMULATOR_CODE),
-        doing_veneer_pool_generation_(false) {
+        generate_simulator_code_(VIXL_AARCH32_GENERATE_SIMULATOR_CODE) {
 #ifdef VIXL_DEBUG
     SetAllowMacroInstructions(true);
 #else
@@ -472,29 +471,27 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 #endif
     ComputeCheckpoint();
   }
-  explicit MacroAssembler(size_t size, InstructionSet isa = A32)
+  explicit MacroAssembler(size_t size, InstructionSet isa = kDefaultISA)
       : Assembler(size, isa),
         available_(r12),
         current_scratch_scope_(NULL),
         checkpoint_(Label::kMaxOffset),
         literal_pool_manager_(this),
         veneer_pool_manager_(this),
-        generate_simulator_code_(VIXL_AARCH32_GENERATE_SIMULATOR_CODE),
-        doing_veneer_pool_generation_(false) {
+        generate_simulator_code_(VIXL_AARCH32_GENERATE_SIMULATOR_CODE) {
 #ifdef VIXL_DEBUG
     SetAllowMacroInstructions(true);
 #endif
     ComputeCheckpoint();
   }
-  MacroAssembler(byte* buffer, size_t size, InstructionSet isa = A32)
+  MacroAssembler(byte* buffer, size_t size, InstructionSet isa = kDefaultISA)
       : Assembler(buffer, size, isa),
         available_(r12),
         current_scratch_scope_(NULL),
         checkpoint_(Label::kMaxOffset),
         literal_pool_manager_(this),
         veneer_pool_manager_(this),
-        generate_simulator_code_(VIXL_AARCH32_GENERATE_SIMULATOR_CODE),
-        doing_veneer_pool_generation_(false) {
+        generate_simulator_code_(VIXL_AARCH32_GENERATE_SIMULATOR_CODE) {
 #ifdef VIXL_DEBUG
     SetAllowMacroInstructions(true);
 #endif
@@ -976,6 +973,12 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
                         EncodingSize size,
                         Register rd,
                         Label* label) VIXL_OVERRIDE;
+  bool GenerateSplitInstruction(InstructionCondSizeRROp instruction,
+                                Condition cond,
+                                Register rd,
+                                Register rn,
+                                uint32_t imm,
+                                uint32_t mask);
   virtual void Delegate(InstructionType type,
                         InstructionCondSizeRROp instruction,
                         Condition cond,
@@ -10947,6 +10950,16 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   void Vsub(VRegister rd, VRegister rn, VRegister rm) { Vsub(al, rd, rn, rm); }
   // End of generated code.
 
+  virtual bool AllowUnpredictable() VIXL_OVERRIDE {
+    VIXL_ABORT_WITH_MSG("Unpredictable instruction.\n");
+    return false;
+  }
+  virtual bool AllowStronglyDiscouraged() VIXL_OVERRIDE {
+    VIXL_ABORT_WITH_MSG(
+        "ARM strongly recommends to not use this instruction.\n");
+    return false;
+  }
+
  private:
   RegisterList available_;
   VRegisterList available_vfp_;
@@ -10957,7 +10970,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   VeneerPoolManager veneer_pool_manager_;
   bool generate_simulator_code_;
   bool allow_macro_instructions_;
-  bool doing_veneer_pool_generation_;
 };
 
 // This scope utility allows scratch registers to be managed safely. The
