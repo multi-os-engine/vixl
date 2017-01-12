@@ -40,8 +40,41 @@ namespace aarch32 {
 
 #define STRINGIFY(x) #x
 
+#ifdef VIXL_INCLUDE_TARGET_A32_ONLY
+#define TEST_T32(Name)                                            \
+void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
+#else
+// Tests declared with this macro will only target T32.
+#define TEST_T32(Name)                                            \
+void Test##Name##Impl(InstructionSet isa);                        \
+void Test##Name() {                                               \
+  Test##Name##Impl(T32);                                          \
+}                                                                 \
+Test test_##Name(STRINGIFY(AARCH32_T32_##Name), &Test##Name);     \
+void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
+#endif
+
+#ifdef VIXL_INCLUDE_TARGET_T32_ONLY
+#define TEST_A32(Name)                                            \
+void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
+#else
+// Test declared with this macro will only target A32.
+#define TEST_A32(Name)                                            \
+void Test##Name##Impl(InstructionSet isa);                        \
+void Test##Name() {                                               \
+  Test##Name##Impl(A32);                                          \
+}                                                                 \
+Test test_##Name(STRINGIFY(AARCH32_A32_##Name), &Test##Name);     \
+void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
+#endif
+
 // Tests declared with this macro will be run twice: once targeting A32 and
 // once targeting T32.
+#if defined(VIXL_INCLUDE_TARGET_A32_ONLY)
+#define TEST(Name)  TEST_A32(Name)
+#elif defined(VIXL_INCLUDE_TARGET_T32_ONLY)
+#define TEST(Name)  TEST_T32(Name)
+#else
 #define TEST(Name)                                                \
 void Test##Name##Impl(InstructionSet isa);                        \
 void Test##Name() {                                               \
@@ -52,24 +85,7 @@ void Test##Name() {                                               \
 }                                                                 \
 Test test_##Name(STRINGIFY(AARCH32_ASM_##Name), &Test##Name);     \
 void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
-
-// Test declared with this macro will only target A32.
-#define TEST_A32(Name)                                            \
-void Test##Name##Impl(InstructionSet isa);                        \
-void Test##Name() {                                               \
-  Test##Name##Impl(A32);                                          \
-}                                                                 \
-Test test_##Name(STRINGIFY(AARCH32_A32_##Name), &Test##Name);     \
-void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
-
-// Tests declared with this macro will only target T32.
-#define TEST_T32(Name)                                            \
-void Test##Name##Impl(InstructionSet isa);                        \
-void Test##Name() {                                               \
-  Test##Name##Impl(T32);                                          \
-}                                                                 \
-Test test_##Name(STRINGIFY(AARCH32_T32_##Name), &Test##Name);     \
-void Test##Name##Impl(InstructionSet isa __attribute__((unused)))
+#endif
 
 // Tests declared with this macro are not expected to use any provided test
 // helpers such as SETUP, RUN, etc.
@@ -2497,6 +2513,157 @@ TEST_T32(veneer_bind) {
 }
 
 
+// Check that the veneer pool is correctly emitted even if we do enough narrow
+// branches before a cbz so that the cbz needs its veneer emitted first in the
+// pool in order to work.
+TEST_T32(b_narrow_and_cbz_sort) {
+  SETUP();
+  START();
+
+  const int kLabelsCount = 40;
+  const int kNops = 30;
+  Label b_labels[kLabelsCount];
+  Label cbz_label;
+
+  __ Nop();
+
+  __ Mov(r0, 0);
+  __ Cmp(r0, 0);
+
+  for (int i = 0; i < kLabelsCount; ++i) {
+    __ B(ne, &b_labels[i], kNear);
+  }
+
+  {
+    ExactAssemblyScope scope(&masm,
+                             k16BitT32InstructionSizeInBytes * kNops,
+                             ExactAssemblyScope::kExactSize);
+    for (int i = 0; i < kNops; i++) {
+      __ nop();
+    }
+  }
+
+  // The pool should not be emitted here.
+  __ Cbz(r0, &cbz_label);
+
+  // Force pool emission. If the labels are not sorted, the cbz will be out
+  // of range.
+  int32_t margin = masm.GetMarginBeforeVeneerEmission();
+  int32_t end = masm.GetCursorOffset() + margin;
+
+  {
+    ExactAssemblyScope scope(&masm, margin, ExactAssemblyScope::kExactSize);
+    while (masm.GetCursorOffset() < end) {
+      __ nop();
+    }
+  }
+
+  __ Mov(r0, 1);
+
+  for (int i = 0; i < kLabelsCount; ++i) {
+    __ Bind(&b_labels[i]);
+  }
+
+  __ Bind(&cbz_label);
+
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_32(0, r0);
+
+  TEARDOWN();
+}
+
+
+TEST_T32(b_narrow_and_cbz_sort_2) {
+  SETUP();
+  START();
+
+  const int kLabelsCount = 40;
+  const int kNops = 30;
+  Label b_labels[kLabelsCount];
+  Label cbz_label;
+
+  __ Mov(r0, 0);
+  __ Cmp(r0, 0);
+
+  for (int i = 0; i < kLabelsCount; ++i) {
+    __ B(ne, &b_labels[i], kNear);
+  }
+
+  {
+    ExactAssemblyScope scope(&masm,
+                             k16BitT32InstructionSizeInBytes * kNops,
+                             ExactAssemblyScope::kExactSize);
+    for (int i = 0; i < kNops; i++) {
+      __ nop();
+    }
+  }
+
+  // The pool should not be emitted here.
+  __ Cbz(r0, &cbz_label);
+
+  // Force pool emission. If the labels are not sorted, the cbz will be out
+  // of range.
+  int32_t margin = masm.GetMarginBeforeVeneerEmission();
+  int32_t end = masm.GetCursorOffset() + margin;
+
+  while (masm.GetCursorOffset() < end) __ Nop();
+
+  __ Mov(r0, 1);
+
+  for (int i = 0; i < kLabelsCount; ++i) {
+    __ Bind(&b_labels[i]);
+  }
+
+  __ Bind(&cbz_label);
+
+  END();
+
+  RUN();
+
+  ASSERT_EQUAL_32(0, r0);
+
+  TEARDOWN();
+}
+
+
+TEST_T32(long_branch) {
+  SETUP();
+  START();
+
+  for (int label_count = 128; label_count < 2048; label_count *= 2) {
+    Label* l = new Label[label_count];
+
+    for (int i = 0; i < label_count; i++) {
+      __ B(&l[i]);
+    }
+
+    for (int i = 0; i < label_count; i++) {
+      __ B(ne, &l[i]);
+    }
+
+    for (int i = 0; i < 261625; i++) {
+      __ Clz(r0, r0);
+    }
+
+    for (int i = label_count - 1; i >= 0; i--) {
+      __ Bind(&l[i]);
+      __ Nop();
+    }
+
+    delete[] l;
+  }
+
+  masm.FinalizeCode();
+
+  END();
+  RUN();
+  TEARDOWN();
+}
+
+
 TEST_T32(unaligned_branch_after_literal) {
   SETUP();
 
@@ -2931,37 +3098,55 @@ void CheckInstructionSetT32(const T& assm) {
 TEST_NOASM(set_isa_constructors) {
   byte buffer[1024];
 
+#ifndef VIXL_INCLUDE_TARGET_T32_ONLY
   // A32 by default.
   CheckInstructionSetA32(Assembler());
   CheckInstructionSetA32(Assembler(1024));
   CheckInstructionSetA32(Assembler(buffer, sizeof(buffer)));
+
+  CheckInstructionSetA32(MacroAssembler());
+  CheckInstructionSetA32(MacroAssembler(1024));
+  CheckInstructionSetA32(MacroAssembler(buffer, sizeof(buffer)));
+#else
+  // T32 by default.
+  CheckInstructionSetT32(Assembler());
+  CheckInstructionSetT32(Assembler(1024));
+  CheckInstructionSetT32(Assembler(buffer, sizeof(buffer)));
+
+  CheckInstructionSetT32(MacroAssembler());
+  CheckInstructionSetT32(MacroAssembler(1024));
+  CheckInstructionSetT32(MacroAssembler(buffer, sizeof(buffer)));
+#endif
+
+#ifdef VIXL_INCLUDE_TARGET_A32
   // Explicit A32.
   CheckInstructionSetA32(Assembler(A32));
   CheckInstructionSetA32(Assembler(1024, A32));
   CheckInstructionSetA32(Assembler(buffer, sizeof(buffer), A32));
+
+  CheckInstructionSetA32(MacroAssembler(A32));
+  CheckInstructionSetA32(MacroAssembler(1024, A32));
+  CheckInstructionSetA32(MacroAssembler(buffer, sizeof(buffer), A32));
+#endif
+
+#ifdef VIXL_INCLUDE_TARGET_T32
   // Explicit T32.
   CheckInstructionSetT32(Assembler(T32));
   CheckInstructionSetT32(Assembler(1024, T32));
   CheckInstructionSetT32(Assembler(buffer, sizeof(buffer), T32));
 
-  // A32 by default.
-  CheckInstructionSetA32(MacroAssembler());
-  CheckInstructionSetA32(MacroAssembler(1024));
-  CheckInstructionSetA32(MacroAssembler(buffer, sizeof(buffer)));
-  // Explicit A32.
-  CheckInstructionSetA32(MacroAssembler(A32));
-  CheckInstructionSetA32(MacroAssembler(1024, A32));
-  CheckInstructionSetA32(MacroAssembler(buffer, sizeof(buffer), A32));
-  // Explicit T32.
   CheckInstructionSetT32(MacroAssembler(T32));
   CheckInstructionSetT32(MacroAssembler(1024, T32));
   CheckInstructionSetT32(MacroAssembler(buffer, sizeof(buffer), T32));
+#endif
 }
 
 
 TEST_NOASM(set_isa_empty) {
   // It is possible to change the instruction set if no instructions have yet
-  // been generated.
+  // been generated. This test only makes sense when both A32 and T32 are
+  // supported.
+#ifdef VIXL_INCLUDE_TARGET_AARCH32
   Assembler assm;
   CheckInstructionSetA32(assm);
   assm.UseT32();
@@ -2983,12 +3168,14 @@ TEST_NOASM(set_isa_empty) {
   CheckInstructionSetT32(masm);
   masm.UseInstructionSet(A32);
   CheckInstructionSetA32(masm);
+#endif
 }
 
 
 TEST_NOASM(set_isa_noop) {
   // It is possible to call a no-op UseA32/T32 or UseInstructionSet even if
   // one or more instructions have been generated.
+#ifdef VIXL_INCLUDE_TARGET_A32
   {
     Assembler assm(A32);
     CheckInstructionSetA32(assm);
@@ -3003,6 +3190,21 @@ TEST_NOASM(set_isa_noop) {
     assm.FinalizeCode();
   }
   {
+    MacroAssembler masm(A32);
+    CheckInstructionSetA32(masm);
+    masm.Bx(lr);
+    VIXL_ASSERT(masm.GetCursorOffset() > 0);
+    CheckInstructionSetA32(masm);
+    masm.UseA32();
+    CheckInstructionSetA32(masm);
+    masm.UseInstructionSet(A32);
+    CheckInstructionSetA32(masm);
+    masm.FinalizeCode();
+  }
+#endif
+
+#ifdef VIXL_INCLUDE_TARGET_T32
+  {
     Assembler assm(T32);
     CheckInstructionSetT32(assm);
     CodeBufferCheckScope scope(&assm, kMaxInstructionSizeInBytes);
@@ -3016,18 +3218,6 @@ TEST_NOASM(set_isa_noop) {
     assm.FinalizeCode();
   }
   {
-    MacroAssembler masm(A32);
-    CheckInstructionSetA32(masm);
-    masm.Bx(lr);
-    VIXL_ASSERT(masm.GetCursorOffset() > 0);
-    CheckInstructionSetA32(masm);
-    masm.UseA32();
-    CheckInstructionSetA32(masm);
-    masm.UseInstructionSet(A32);
-    CheckInstructionSetA32(masm);
-    masm.FinalizeCode();
-  }
-  {
     MacroAssembler masm(T32);
     CheckInstructionSetT32(masm);
     masm.Bx(lr);
@@ -3039,6 +3229,7 @@ TEST_NOASM(set_isa_noop) {
     CheckInstructionSetT32(masm);
     masm.FinalizeCode();
   }
+#endif
 }
 
 
@@ -3329,7 +3520,7 @@ TEST(veneer_pool_margin) {
 }
 
 
-TEST_T32(cbz_fuzz) {
+TEST_T32(near_branch_fuzz) {
   SETUP();
   START();
 
@@ -3342,10 +3533,13 @@ TEST_T32(cbz_fuzz) {
 
   // Use multiple iterations, as each produces a different predictably random
   // sequence.
-  const int iterations = 32;
+  const int iterations = 64;
 
   int loop_count = 0;
   __ Mov(r1, 0);
+
+  // Initialise the status flags to Z set.
+  __ Cmp(r1, r1);
 
   // Gradually increasing the number of cases effectively increases the
   // probability of nops being emitted in the sequence. The branch-to-bind
@@ -3376,11 +3570,13 @@ TEST_T32(cbz_fuzz) {
               __ Add(r1, r1, 1);
             }
             break;
-          case 1: // Branch.
+          case 1: // Compare and branch if zero (untaken as r0 == 1).
           case 2:
-          case 3:
-          case 4:
             __ Cbz(r0, &l[label_index]);
+            break;
+          case 3: // Conditional branch (untaken as Z set) preferred near.
+          case 4:
+            __ BPreferNear(ne, &l[label_index]);
             break;
           default: // Nop.
             __ Nop();
@@ -3396,7 +3592,7 @@ TEST_T32(cbz_fuzz) {
         if (allbound) break;
       }
 
-      // Ensure that the veneer pools are emitted, to keep each case
+      // Ensure that the veneer pools are emitted, to keep each branch/bind test
       // independent.
       masm.FinalizeCode();
       delete[] l;
@@ -3412,6 +3608,7 @@ TEST_T32(cbz_fuzz) {
 }
 
 
+#ifdef VIXL_INCLUDE_TARGET_T32
 TEST_NOASM(code_buffer_precise_growth) {
   static const int kBaseBufferSize = 16;
   MacroAssembler masm(kBaseBufferSize, T32);
@@ -3436,8 +3633,10 @@ TEST_NOASM(code_buffer_precise_growth) {
 
   masm.FinalizeCode();
 }
+#endif
 
 
+#ifdef VIXL_INCLUDE_TARGET_T32
 TEST_NOASM(out_of_space_immediately_before_PerformEnsureEmit) {
   static const int kBaseBufferSize = 64;
   MacroAssembler masm(kBaseBufferSize, T32);
@@ -3480,6 +3679,7 @@ TEST_NOASM(out_of_space_immediately_before_PerformEnsureEmit) {
 
   masm.FinalizeCode();
 }
+#endif
 
 
 TEST_T32(distant_literal_references) {

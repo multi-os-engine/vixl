@@ -35,8 +35,15 @@ void VeneerPoolManager::Release() {
   VIXL_ASSERT(IsBlocked());
   if (--monitor_ == 0) {
     // Ensure the pool has not been blocked for too long.
-    VIXL_ASSERT(masm_->GetCursorOffset() <= near_checkpoint_);
-    VIXL_ASSERT(masm_->GetCursorOffset() <= far_checkpoint_);
+    // This may generate some veneers if some labels has been added by the code
+    // which used Block/Release.
+
+    // TODO: This check is _temporarily_ disabled to work around some usage in
+    // ART, which assumes that pools will not be generated immediately after
+    // macros or ExactAssemblyScopes. The next instruction that is generated
+    // will perform this check anyway, but in a place less convenient for
+    // debugging.
+    // masm_->EnsureEmitFor(0);
   }
 }
 
