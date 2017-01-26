@@ -39,7 +39,6 @@
 namespace vixl {
 namespace aarch32 {
 
-class JumpTableBase;
 class UseScratchRegisterScope;
 
 enum FlagsUpdate { LeaveFlags = 0, SetFlags = 1, DontCare = 2 };
@@ -124,19 +123,8 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     return this;
   }
 
-  virtual void BlockPools() VIXL_OVERRIDE {
-    literal_pool_manager_.Block();
-    veneer_pool_manager_.Block();
-  }
-  virtual void ReleasePools() VIXL_OVERRIDE {
-    literal_pool_manager_.Release();
-    veneer_pool_manager_.Release();
-  }
-  virtual void EnsureEmitPoolsFor(size_t size) VIXL_OVERRIDE {
-    // TODO: Optimise this. It also checks that there is space in the buffer,
-    // which we do not need to do here.
-    VIXL_ASSERT(IsUint32(size));
-    EnsureEmitFor(static_cast<uint32_t>(size));
+  virtual bool ArePoolsBlocked() const VIXL_OVERRIDE {
+    return IsLiteralPoolBlocked() && IsVeneerPoolBlocked();
   }
 
  private:
@@ -414,6 +402,37 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   void PerformEnsureEmit(Label::Offset target, uint32_t extra_size);
 
  protected:
+  virtual void BlockPools() VIXL_OVERRIDE {
+    BlockLiteralPool();
+    BlockVeneerPool();
+  }
+  virtual void ReleasePools() VIXL_OVERRIDE {
+    ReleaseLiteralPool();
+    ReleaseVeneerPool();
+  }
+  virtual void EnsureEmitPoolsFor(size_t size) VIXL_OVERRIDE {
+    // TODO: Optimise this. It also checks that there is space in the buffer,
+    // which we do not need to do here.
+    VIXL_ASSERT(IsUint32(size));
+    EnsureEmitFor(static_cast<uint32_t>(size));
+  }
+
+  // Tell whether any of the macro instruction can be used. When false the
+  // MacroAssembler will assert if a method which can emit a variable number
+  // of instructions is called.
+  virtual void SetAllowMacroInstructions(bool value) VIXL_OVERRIDE {
+    allow_macro_instructions_ = value;
+  }
+
+  void BlockLiteralPool() { literal_pool_manager_.Block(); }
+  void ReleaseLiteralPool() { literal_pool_manager_.Release(); }
+  bool IsLiteralPoolBlocked() const {
+    return literal_pool_manager_.IsBlocked();
+  }
+  void BlockVeneerPool() { veneer_pool_manager_.Block(); }
+  void ReleaseVeneerPool() { veneer_pool_manager_.Release(); }
+  bool IsVeneerPoolBlocked() const { return veneer_pool_manager_.IsBlocked(); }
+
   void HandleOutOfBoundsImmediate(Condition cond, Register tmp, uint32_t imm);
   void PadToMinimumBranchRange(Label* label);
 
@@ -435,7 +454,8 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
       ITScope it_scope(this, &c);
       instr_callback.emit(this, c, literal);
     }
-    if (!literal->IsManuallyPlaced() && !literal->IsBound()) {
+    if (!literal->IsManuallyPlaced() && !literal->IsBound() &&
+        !IsLiteralPoolBlocked()) {
       if (WasInsertedTooFar(literal)) {
         // The instruction's data is too far: revert the emission
         GetBuffer()->Rewind(cursor);
@@ -500,12 +520,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 
   bool GenerateSimulatorCode() const { return generate_simulator_code_; }
 
-  // Tell whether any of the macro instruction can be used. When false the
-  // MacroAssembler will assert if a method which can emit a variable number
-  // of instructions is called.
-  virtual void SetAllowMacroInstructions(bool value) VIXL_OVERRIDE {
-    allow_macro_instructions_ = value;
-  }
   virtual bool AllowMacroInstructions() const VIXL_OVERRIDE {
     return allow_macro_instructions_;
   }
@@ -720,7 +734,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   // delete'd.
   void EmitLiteralPool(LiteralPool* const literal_pool, EmitOption option);
   void EmitLiteralPool(EmitOption option = kBranchRequired) {
-    VIXL_ASSERT(!literal_pool_manager_.IsBlocked());
+    VIXL_ASSERT(!IsLiteralPoolBlocked());
     EmitLiteralPool(literal_pool_manager_.GetLiteralPool(), option);
     literal_pool_manager_.ResetCheckpoint();
     ComputeCheckpoint();
@@ -891,13 +905,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   void Vmov(DRegister rt, double v) { Vmov(al, F64, rt, v); }
   void Vmov(Condition cond, SRegister rt, float v) { Vmov(cond, F32, rt, v); }
   void Vmov(SRegister rt, float v) { Vmov(al, F32, rt, v); }
-
-  void Switch(Register reg, JumpTableBase* table);
-  void GenerateSwitchTable(JumpTableBase* table, int table_size);
-  void Case(JumpTableBase* table, int case_index);
-  void Break(JumpTableBase* table);
-  void Default(JumpTableBase* table);
-  void EndSwitch(JumpTableBase* table);
 
   // Claim memory on the stack.
   // Note that the Claim, Drop, and Peek helpers below ensure that offsets used
@@ -1231,16 +1238,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   void Adds(Register rd, Register rn, const Operand& operand) {
     Adds(al, rd, rn, operand);
   }
-
-  void Adr(Condition cond, Register rd, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    adr(cond, rd, label);
-  }
-  void Adr(Register rd, Label* label) { Adr(al, rd, label); }
 
   void And(Condition cond, Register rd, Register rn, const Operand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
@@ -2150,15 +2147,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
   void Ldr(Register rt, const MemOperand& operand) { Ldr(al, rt, operand); }
 
-  void Ldr(Condition cond, Register rt, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    ldr(cond, rt, label);
-  }
-  void Ldr(Register rt, Label* label) { Ldr(al, rt, label); }
 
   void Ldrb(Condition cond, Register rt, const MemOperand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
@@ -2182,15 +2170,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
   void Ldrb(Register rt, const MemOperand& operand) { Ldrb(al, rt, operand); }
 
-  void Ldrb(Condition cond, Register rt, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    ldrb(cond, rt, label);
-  }
-  void Ldrb(Register rt, Label* label) { Ldrb(al, rt, label); }
 
   void Ldrd(Condition cond,
             Register rt,
@@ -2209,18 +2188,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     Ldrd(al, rt, rt2, operand);
   }
 
-  void Ldrd(Condition cond, Register rt, Register rt2, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt2));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    ldrd(cond, rt, rt2, label);
-  }
-  void Ldrd(Register rt, Register rt2, Label* label) {
-    Ldrd(al, rt, rt2, label);
-  }
 
   void Ldrex(Condition cond, Register rt, const MemOperand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
@@ -2298,15 +2265,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
   void Ldrh(Register rt, const MemOperand& operand) { Ldrh(al, rt, operand); }
 
-  void Ldrh(Condition cond, Register rt, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    ldrh(cond, rt, label);
-  }
-  void Ldrh(Register rt, Label* label) { Ldrh(al, rt, label); }
 
   void Ldrsb(Condition cond, Register rt, const MemOperand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
@@ -2325,15 +2283,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
   void Ldrsb(Register rt, const MemOperand& operand) { Ldrsb(al, rt, operand); }
 
-  void Ldrsb(Condition cond, Register rt, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    ldrsb(cond, rt, label);
-  }
-  void Ldrsb(Register rt, Label* label) { Ldrsb(al, rt, label); }
 
   void Ldrsh(Condition cond, Register rt, const MemOperand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
@@ -2352,15 +2301,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
   void Ldrsh(Register rt, const MemOperand& operand) { Ldrsh(al, rt, operand); }
 
-  void Ldrsh(Condition cond, Register rt, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rt));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    ldrsh(cond, rt, label);
-  }
-  void Ldrsh(Register rt, Label* label) { Ldrsh(al, rt, label); }
 
   void Lsl(Condition cond, Register rd, Register rm, const Operand& operand) {
     VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
@@ -7483,21 +7423,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     Vldmia(al, kDataTypeValueNone, rn, write_back, sreglist);
   }
 
-  void Vldr(Condition cond, DataType dt, DRegister rd, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    vldr(cond, dt, rd, label);
-  }
-  void Vldr(DataType dt, DRegister rd, Label* label) {
-    Vldr(al, dt, rd, label);
-  }
-  void Vldr(Condition cond, DRegister rd, Label* label) {
-    Vldr(cond, Untyped64, rd, label);
-  }
-  void Vldr(DRegister rd, Label* label) { Vldr(al, Untyped64, rd, label); }
 
   void Vldr(Condition cond,
             DataType dt,
@@ -7521,21 +7446,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     Vldr(al, Untyped64, rd, operand);
   }
 
-  void Vldr(Condition cond, DataType dt, SRegister rd, Label* label) {
-    VIXL_ASSERT(!AliasesAvailableScratchRegister(rd));
-    VIXL_ASSERT(allow_macro_instructions_);
-    VIXL_ASSERT(OutsideITBlock());
-    MacroEmissionCheckScope guard(this);
-    ITScope it_scope(this, &cond);
-    vldr(cond, dt, rd, label);
-  }
-  void Vldr(DataType dt, SRegister rd, Label* label) {
-    Vldr(al, dt, rd, label);
-  }
-  void Vldr(Condition cond, SRegister rd, Label* label) {
-    Vldr(cond, Untyped32, rd, label);
-  }
-  void Vldr(SRegister rd, Label* label) { Vldr(al, Untyped32, rd, label); }
 
   void Vldr(Condition cond,
             DataType dt,
@@ -11084,111 +10994,6 @@ class UseScratchRegisterScope {
   }
 };
 
-class JumpTableBase {
- protected:
-  JumpTableBase(int len, int offset_size)
-      : table_location_(Label::kMaxOffset),
-        branch_location_(Label::kMaxOffset),
-        length_(len),
-        offset_shift_(WhichPowerOf2(offset_size)),
-        presence_(length_) {
-    VIXL_ASSERT((length_ >= 0) && (offset_size <= 4));
-  }
-  virtual ~JumpTableBase() {}
-
- public:
-  int GetTableSizeInBytes() const { return length_ * (1 << offset_shift_); }
-  int GetOffsetShift() const { return offset_shift_; }
-  int GetLength() const { return length_; }
-  Label* GetDefaultLabel() { return &default_; }
-  Label* GetEndLabel() { return &end_; }
-  void SetBranchLocation(uint32_t branch_location) {
-    branch_location_ = branch_location;
-  }
-  uint32_t GetBranchLocation() const { return branch_location_; }
-  void BindTable(uint32_t location) { table_location_ = location; }
-  virtual void Link(MacroAssembler* masm,
-                    int case_index,
-                    uint32_t location) = 0;
-
-  uint32_t GetLocationForCase(int i) {
-    VIXL_ASSERT((i >= 0) && (i < length_));
-    return table_location_ + (i * (1 << offset_shift_));
-  }
-  void SetPresenceBitForCase(int i) {
-    VIXL_ASSERT((i >= 0) && (i < length_));
-    presence_.Set(i);
-  }
-
-  void Finalize(MacroAssembler* masm) {
-    if (!default_.IsBound()) {
-      masm->Bind(&default_);
-    }
-    masm->Bind(&end_);
-
-    presence_.ForEachBitNotSet(LinkIt(this, masm, default_.GetLocation()));
-  }
-
- private:
-  uint32_t table_location_;
-  uint32_t branch_location_;
-  const int length_;
-  const int offset_shift_;
-  BitField presence_;
-  Label default_;
-  Label end_;
-  struct LinkIt {
-    JumpTableBase* table_;
-    MacroAssembler* const masm_;
-    const uint32_t location_;
-    LinkIt(JumpTableBase* table, MacroAssembler* const masm, uint32_t location)
-        : table_(table), masm_(masm), location_(location) {}
-    bool execute(int id) const {
-      VIXL_ASSERT(id < table_->GetLength());
-      table_->Link(masm_, static_cast<int>(id), location_);
-      return true;
-    }
-  };
-};
-
-// JumpTable<T>(len): Helper to describe a jump table
-// len here describes the number of possible case. Values in [0, n[ can have a
-// jump offset. Any other value will assert.
-template <typename T>
-class JumpTable : public JumpTableBase {
- protected:
-  explicit JumpTable(int length) : JumpTableBase(length, sizeof(T)) {}
-
- public:
-  virtual void Link(MacroAssembler* masm,
-                    int case_index,
-                    uint32_t location) VIXL_OVERRIDE {
-    uint32_t position_in_table = GetLocationForCase(case_index);
-    uint32_t from = GetBranchLocation();
-    int offset = location - from;
-    T* case_offset = masm->GetBuffer()->GetOffsetAddress<T*>(position_in_table);
-    if (masm->IsUsingT32()) {
-      *case_offset = offset >> 1;
-    } else {
-      *case_offset = offset >> 2;
-    }
-  }
-};
-
-class JumpTable8bitOffset : public JumpTable<uint8_t> {
- public:
-  explicit JumpTable8bitOffset(int length) : JumpTable<uint8_t>(length) {}
-};
-
-class JumpTable16bitOffset : public JumpTable<uint16_t> {
- public:
-  explicit JumpTable16bitOffset(int length) : JumpTable<uint16_t>(length) {}
-};
-
-class JumpTable32bitOffset : public JumpTable<uint32_t> {
- public:
-  explicit JumpTable32bitOffset(int length) : JumpTable<uint32_t>(length) {}
-};
 
 }  // namespace aarch32
 }  // namespace vixl

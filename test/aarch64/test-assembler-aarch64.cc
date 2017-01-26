@@ -94,132 +94,124 @@ namespace aarch64 {
 
 
 #define __ masm.
-#define TEST(name)  TEST_(AARCH64_ASM_##name)
+#define TEST(name) TEST_(AARCH64_ASM_##name)
 
 #ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 // Run tests with the simulator.
 
-#define SETUP()                                                                \
-  MacroAssembler masm;                                                         \
+#define SETUP()        \
+  MacroAssembler masm; \
   SETUP_COMMON()
 
-#define SETUP_CUSTOM(size, pic)                                                \
-  byte* buf = new byte[size + CodeBuffer::kDefaultCapacity];                   \
-  MacroAssembler masm(buf, size + CodeBuffer::kDefaultCapacity, pic);          \
+#define SETUP_CUSTOM(size, pic)                                       \
+  byte* buf = new byte[size + CodeBuffer::kDefaultCapacity];          \
+  MacroAssembler masm(buf, size + CodeBuffer::kDefaultCapacity, pic); \
   SETUP_COMMON()
 
-#define SETUP_COMMON()                                                         \
-  masm.SetGenerateSimulatorCode(true);                                         \
-  Decoder simulator_decoder;                                                   \
-  Simulator* simulator =                                                       \
-      Test::run_debugger() ? new Debugger(&simulator_decoder)                  \
-                           : new Simulator(&simulator_decoder);                \
-  simulator->SetColouredTrace(Test::coloured_trace());                         \
-  simulator->SetInstructionStats(Test::instruction_stats());                   \
-  Disassembler disasm;                                                         \
-  Decoder disassembler_decoder;                                                \
-  disassembler_decoder.AppendVisitor(&disasm);                                 \
+#define SETUP_COMMON()                                            \
+  masm.SetGenerateSimulatorCode(true);                            \
+  Decoder simulator_decoder;                                      \
+  Simulator* simulator = Test::run_debugger()                     \
+                             ? new Debugger(&simulator_decoder)   \
+                             : new Simulator(&simulator_decoder); \
+  simulator->SetColouredTrace(Test::coloured_trace());            \
+  simulator->SetInstructionStats(Test::instruction_stats());      \
+  Disassembler disasm;                                            \
+  Decoder disassembler_decoder;                                   \
+  disassembler_decoder.AppendVisitor(&disasm);                    \
   RegisterDump core
 
-// This is a convenience macro to avoid creating a scope for every assembler
-// function called. It will still assert the buffer hasn't been exceeded.
-#define ALLOW_ASM()                                                            \
-  CodeBufferCheckScope guard(&masm, masm.GetBuffer()->GetCapacity())
-
-#define START()                                                                \
-  masm.Reset();                                                                \
-  simulator->ResetState();                                                     \
-  __ PushCalleeSavedRegisters();                                               \
-  {                                                                            \
-    int trace_parameters = 0;                                                  \
-    if (Test::trace_reg()) trace_parameters |= LOG_STATE;                      \
-    if (Test::trace_write()) trace_parameters |= LOG_WRITE;                    \
-    if (Test::trace_sim()) trace_parameters |= LOG_DISASM;                     \
-    if (Test::trace_branch()) trace_parameters |= LOG_BRANCH;                  \
-    if (trace_parameters != 0) {                                               \
-      __ Trace(static_cast<TraceParameters>(trace_parameters), TRACE_ENABLE);  \
-    }                                                                          \
-  }                                                                            \
-  if (Test::instruction_stats()) {                                             \
-    __ EnableInstrumentation();                                                \
+#define START()                                                               \
+  masm.Reset();                                                               \
+  simulator->ResetState();                                                    \
+  __ PushCalleeSavedRegisters();                                              \
+  {                                                                           \
+    int trace_parameters = 0;                                                 \
+    if (Test::trace_reg()) trace_parameters |= LOG_STATE;                     \
+    if (Test::trace_write()) trace_parameters |= LOG_WRITE;                   \
+    if (Test::trace_sim()) trace_parameters |= LOG_DISASM;                    \
+    if (Test::trace_branch()) trace_parameters |= LOG_BRANCH;                 \
+    if (trace_parameters != 0) {                                              \
+      __ Trace(static_cast<TraceParameters>(trace_parameters), TRACE_ENABLE); \
+    }                                                                         \
+  }                                                                           \
+  if (Test::instruction_stats()) {                                            \
+    __ EnableInstrumentation();                                               \
   }
 
-#define END()                                                                  \
-  if (Test::instruction_stats()) {                                             \
-    __ DisableInstrumentation();                                               \
-  }                                                                            \
-  __ Trace(LOG_ALL, TRACE_DISABLE);                                            \
-  core.Dump(&masm);                                                            \
-  __ PopCalleeSavedRegisters();                                                \
-  __ Ret();                                                                    \
+#define END()                       \
+  if (Test::instruction_stats()) {  \
+    __ DisableInstrumentation();    \
+  }                                 \
+  __ Trace(LOG_ALL, TRACE_DISABLE); \
+  core.Dump(&masm);                 \
+  __ PopCalleeSavedRegisters();     \
+  __ Ret();                         \
   masm.FinalizeCode()
 
-#define RUN()                                                                  \
-  DISASSEMBLE();                                                               \
+#define RUN()    \
+  DISASSEMBLE(); \
   simulator->RunFrom(masm.GetBuffer()->GetStartAddress<Instruction*>())
 
 #define RUN_CUSTOM() RUN()
 
 #define TEARDOWN() TEARDOWN_COMMON()
 
-#define TEARDOWN_CUSTOM()                                                      \
-  delete[] buf;                                                                \
+#define TEARDOWN_CUSTOM() \
+  delete[] buf;           \
   TEARDOWN_COMMON()
 
-#define TEARDOWN_COMMON()                                                      \
-  delete simulator;
+#define TEARDOWN_COMMON() delete simulator;
 
 #else  // ifdef VIXL_INCLUDE_SIMULATOR_AARCH64.
 // Run the test on real hardware or models.
-#define SETUP()                                                                \
-  MacroAssembler masm;                                                         \
+#define SETUP()        \
+  MacroAssembler masm; \
   SETUP_COMMON()
 
-#define SETUP_CUSTOM(size, pic)                                                \
-  byte *buffer = reinterpret_cast<byte*>(                                      \
-      mmap(NULL, size + CodeBuffer::kDefaultCapacity,                          \
-           PROT_READ | PROT_WRITE,                                             \
-           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));                               \
-  size_t buffer_size = size + CodeBuffer::kDefaultCapacity;                    \
-  MacroAssembler masm(buffer, buffer_size, pic);                               \
+#define SETUP_CUSTOM(size, pic)                                         \
+  byte* buffer =                                                        \
+      reinterpret_cast<byte*>(mmap(NULL,                                \
+                                   size + CodeBuffer::kDefaultCapacity, \
+                                   PROT_READ | PROT_WRITE,              \
+                                   MAP_PRIVATE | MAP_ANONYMOUS,         \
+                                   -1,                                  \
+                                   0));                                 \
+  size_t buffer_size = size + CodeBuffer::kDefaultCapacity;             \
+  MacroAssembler masm(buffer, buffer_size, pic);                        \
   SETUP_COMMON()
 
-#define SETUP_COMMON()                                                         \
-  Disassembler disasm;                                                         \
-  Decoder disassembler_decoder;                                                \
-  disassembler_decoder.AppendVisitor(&disasm);                                 \
-  masm.SetGenerateSimulatorCode(false);                                        \
-  RegisterDump core;                                                           \
+#define SETUP_COMMON()                         \
+  Disassembler disasm;                         \
+  Decoder disassembler_decoder;                \
+  disassembler_decoder.AppendVisitor(&disasm); \
+  masm.SetGenerateSimulatorCode(false);        \
+  RegisterDump core;                           \
   CPU::SetUp()
 
-// This is a convenience macro to avoid creating a scope for every assembler
-// function called. It will still assert the buffer hasn't been exceeded.
-#define ALLOW_ASM()                                                            \
-  CodeBufferCheckScope guard(&masm, masm.GetBuffer()->GetCapacity())
-
-#define START()                                                                \
-  masm.Reset();                                                                \
+#define START() \
+  masm.Reset(); \
   __ PushCalleeSavedRegisters()
 
-#define END()                                                                  \
-  core.Dump(&masm);                                                            \
-  __ PopCalleeSavedRegisters();                                                \
-  __ Ret();                                                                    \
+#define END()                   \
+  core.Dump(&masm);             \
+  __ PopCalleeSavedRegisters(); \
+  __ Ret();                     \
   masm.FinalizeCode()
 
 // Execute the generated code from the memory area.
-#define RUN()                                                                  \
-  DISASSEMBLE();                                                               \
-  masm.GetBuffer()->SetExecutable();                                           \
-    ExecuteMemory(masm.GetBuffer()->GetStartAddress<byte*>(),                  \
-                  masm.GetSizeOfCodeGenerated());                              \
+#define RUN()                                               \
+  DISASSEMBLE();                                            \
+  masm.GetBuffer()->SetExecutable();                        \
+  ExecuteMemory(masm.GetBuffer()->GetStartAddress<byte*>(), \
+                masm.GetSizeOfCodeGenerated());             \
   masm.GetBuffer()->SetWritable()
 
 // The generated code was written directly into `buffer`, execute it directly.
-#define RUN_CUSTOM()                                                           \
-  DISASSEMBLE();                                                               \
-  mprotect(buffer, buffer_size, PROT_READ | PROT_EXEC);                        \
-  ExecuteMemory(buffer, buffer_size);                                          \
+#define RUN_CUSTOM()                                    \
+  DISASSEMBLE();                                        \
+  mprotect(buffer, buffer_size, PROT_READ | PROT_EXEC); \
+  ExecuteMemory(buffer, buffer_size);                   \
   mprotect(buffer, buffer_size, PROT_READ | PROT_WRITE)
 
 #define TEARDOWN()
@@ -228,42 +220,42 @@ namespace aarch64 {
 
 #endif  // ifdef VIXL_INCLUDE_SIMULATOR_AARCH64.
 
-#define DISASSEMBLE() \
-  if (Test::disassemble()) {                                                   \
-    Instruction* instruction =                                                 \
-        masm.GetBuffer()->GetStartAddress<Instruction*>();                     \
-    Instruction* end = masm.GetBuffer()->GetOffsetAddress<Instruction*>(       \
-        masm.GetSizeOfCodeGenerated());                                        \
-    while (instruction != end) {                                               \
-      disassembler_decoder.Decode(instruction);                                \
-      uint32_t encoding = *reinterpret_cast<uint32_t*>(instruction);           \
-      printf("%08" PRIx32 "\t%s\n", encoding, disasm.GetOutput());             \
-      instruction += kInstructionSize;                                         \
-    }                                                                          \
+#define DISASSEMBLE()                                                    \
+  if (Test::disassemble()) {                                             \
+    Instruction* instruction =                                           \
+        masm.GetBuffer()->GetStartAddress<Instruction*>();               \
+    Instruction* end = masm.GetBuffer()->GetOffsetAddress<Instruction*>( \
+        masm.GetSizeOfCodeGenerated());                                  \
+    while (instruction != end) {                                         \
+      disassembler_decoder.Decode(instruction);                          \
+      uint32_t encoding = *reinterpret_cast<uint32_t*>(instruction);     \
+      printf("%08" PRIx32 "\t%s\n", encoding, disasm.GetOutput());       \
+      instruction += kInstructionSize;                                   \
+    }                                                                    \
   }
 
-#define ASSERT_EQUAL_NZCV(expected)                                            \
+#define ASSERT_EQUAL_NZCV(expected) \
   VIXL_CHECK(EqualNzcv(expected, core.flags_nzcv()))
 
-#define ASSERT_EQUAL_REGISTERS(expected)                                       \
+#define ASSERT_EQUAL_REGISTERS(expected) \
   VIXL_CHECK(EqualRegisters(&expected, &core))
 
-#define ASSERT_EQUAL_32(expected, result)                                      \
+#define ASSERT_EQUAL_32(expected, result) \
   VIXL_CHECK(Equal32(static_cast<uint32_t>(expected), &core, result))
 
-#define ASSERT_EQUAL_FP32(expected, result)                                    \
+#define ASSERT_EQUAL_FP32(expected, result) \
   VIXL_CHECK(EqualFP32(expected, &core, result))
 
-#define ASSERT_EQUAL_64(expected, result)                                      \
+#define ASSERT_EQUAL_64(expected, result) \
   VIXL_CHECK(Equal64(expected, &core, result))
 
-#define ASSERT_EQUAL_FP64(expected, result)                                    \
+#define ASSERT_EQUAL_FP64(expected, result) \
   VIXL_CHECK(EqualFP64(expected, &core, result))
 
-#define ASSERT_EQUAL_128(expected_h, expected_l, result)                       \
+#define ASSERT_EQUAL_128(expected_h, expected_l, result) \
   VIXL_CHECK(Equal128(expected_h, expected_l, &core, result))
 
-#define ASSERT_LITERAL_POOL_SIZE(expected)                                     \
+#define ASSERT_LITERAL_POOL_SIZE(expected) \
   VIXL_CHECK((expected + kInstructionSize) == (masm.GetLiteralPoolSize()))
 
 
@@ -463,7 +455,6 @@ TEST(mov_imm_x) {
 
 TEST(mov) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(x0, 0xffffffffffffffff);
@@ -473,9 +464,12 @@ TEST(mov) {
 
   __ Mov(x0, 0x0123456789abcdef);
 
-  __ movz(x1, UINT64_C(0xabcd) << 16);
-  __ movk(x2, UINT64_C(0xabcd) << 32);
-  __ movn(x3, UINT64_C(0xabcd) << 48);
+  {
+    ExactAssemblyScope scope(&masm, 3 * kInstructionSize);
+    __ movz(x1, UINT64_C(0xabcd) << 16);
+    __ movk(x2, UINT64_C(0xabcd) << 32);
+    __ movn(x3, UINT64_C(0xabcd) << 48);
+  }
 
   __ Mov(x4, 0x0123456789abcdef);
   __ Mov(x5, x4);
@@ -1698,17 +1692,17 @@ TEST(label) {
   START();
   __ Mov(x0, 0x1);
   __ Mov(x1, 0x0);
-  __ Mov(x22, lr);    // Save lr.
+  __ Mov(x22, lr);  // Save lr.
 
   __ B(&label_1);
   __ B(&label_1);
-  __ B(&label_1);     // Multiple branches to the same label.
+  __ B(&label_1);  // Multiple branches to the same label.
   __ Mov(x0, 0x0);
   __ Bind(&label_2);
-  __ B(&label_3);     // Forward branch.
+  __ B(&label_3);  // Forward branch.
   __ Mov(x0, 0x0);
   __ Bind(&label_1);
-  __ B(&label_2);     // Backward branch.
+  __ B(&label_2);  // Backward branch.
   __ Mov(x0, 0x0);
   __ Bind(&label_3);
   __ Bl(&label_4);
@@ -1774,10 +1768,10 @@ TEST(adr) {
   Label label_1, label_2, label_3, label_4;
 
   START();
-  __ Mov(x0, 0x0);        // Set to non-zero to indicate failure.
-  __ Adr(x1, &label_3);   // Set to zero to indicate success.
+  __ Mov(x0, 0x0);       // Set to non-zero to indicate failure.
+  __ Adr(x1, &label_3);  // Set to zero to indicate success.
 
-  __ Adr(x2, &label_1);   // Multiple forward references to the same label.
+  __ Adr(x2, &label_1);  // Multiple forward references to the same label.
   __ Adr(x3, &label_1);
   __ Adr(x4, &label_1);
 
@@ -1789,17 +1783,17 @@ TEST(adr) {
   __ Br(x2);  // label_1, label_3
 
   __ Bind(&label_3);
-  __ Adr(x2, &label_3);   // Self-reference (offset 0).
+  __ Adr(x2, &label_3);  // Self-reference (offset 0).
   __ Eor(x1, x1, Operand(x2));
-  __ Adr(x2, &label_4);   // Simple forward reference.
-  __ Br(x2);  // label_4
+  __ Adr(x2, &label_4);  // Simple forward reference.
+  __ Br(x2);             // label_4
 
   __ Bind(&label_1);
-  __ Adr(x2, &label_3);   // Multiple reverse references to the same label.
+  __ Adr(x2, &label_3);  // Multiple reverse references to the same label.
   __ Adr(x3, &label_3);
   __ Adr(x4, &label_3);
-  __ Adr(x5, &label_2);   // Simple reverse reference.
-  __ Br(x5);  // label_2
+  __ Adr(x5, &label_2);  // Simple reverse reference.
+  __ Br(x5);             // label_2
 
   __ Bind(&label_4);
   END();
@@ -2030,7 +2024,6 @@ TEST(adrp_offset) {
 
 TEST(branch_cond) {
   SETUP();
-  ALLOW_ASM();
 
   Label done, wrong;
 
@@ -2096,13 +2089,19 @@ TEST(branch_cond) {
 
   // The MacroAssembler does not allow al as a branch condition.
   Label ok_5;
-  __ b(&ok_5, al);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ b(&ok_5, al);
+  }
   __ Mov(x0, 0x0);
   __ Bind(&ok_5);
 
   // The MacroAssembler does not allow nv as a branch condition.
   Label ok_6;
-  __ b(&ok_6, nv);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ b(&ok_6, nv);
+  }
   __ Mov(x0, 0x0);
   __ Bind(&ok_6);
 
@@ -2559,7 +2558,7 @@ TEST(ldr_str_largeindex) {
   // This value won't fit in the immediate offset field of ldr/str instructions.
   int largeoffset = 0xabcdef;
 
-  int64_t data[3] = { 0x1122334455667788, 0, 0 };
+  int64_t data[3] = {0x1122334455667788, 0, 0};
   uint64_t base_addr = reinterpret_cast<uintptr_t>(data);
   uint64_t drifted_addr = base_addr - largeoffset;
 
@@ -2853,11 +2852,10 @@ TEST(load_store_h) {
 TEST(load_store_q) {
   SETUP();
 
-  uint8_t src[48] = {0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
-                     0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
-                     0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb, 0xed, 0x0f,
-                     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-                     0x24, 0x46, 0x68, 0x8a, 0xac, 0xce, 0xe0, 0x02,
+  uint8_t src[48] = {0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x01, 0x23,
+                     0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x21, 0x43, 0x65, 0x87,
+                     0xa9, 0xcb, 0xed, 0x0f, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                     0xde, 0xf0, 0x24, 0x46, 0x68, 0x8a, 0xac, 0xce, 0xe0, 0x02,
                      0x42, 0x64, 0x86, 0xa8, 0xca, 0xec, 0x0e, 0x20};
 
   uint64_t dst[6] = {0, 0, 0, 0, 0, 0};
@@ -3057,11 +3055,20 @@ TEST(neon_ld1_d_postindex) {
   __ Ld1(v2.V8B(), MemOperand(x17, x23, PostIndex));
   __ Ld1(v3.V8B(), v4.V8B(), MemOperand(x18, 16, PostIndex));
   __ Ld1(v5.V4H(), v6.V4H(), v7.V4H(), MemOperand(x19, 24, PostIndex));
-  __ Ld1(v16.V2S(), v17.V2S(), v18.V2S(), v19.V2S(),
+  __ Ld1(v16.V2S(),
+         v17.V2S(),
+         v18.V2S(),
+         v19.V2S(),
          MemOperand(x20, 32, PostIndex));
-  __ Ld1(v30.V2S(), v31.V2S(), v0.V2S(), v1.V2S(),
+  __ Ld1(v30.V2S(),
+         v31.V2S(),
+         v0.V2S(),
+         v1.V2S(),
          MemOperand(x21, 32, PostIndex));
-  __ Ld1(v20.V1D(), v21.V1D(), v22.V1D(), v23.V1D(),
+  __ Ld1(v20.V1D(),
+         v21.V1D(),
+         v22.V1D(),
+         v23.V1D(),
          MemOperand(x22, 32, PostIndex));
   END();
 
@@ -3158,9 +3165,15 @@ TEST(neon_ld1_q_postindex) {
   __ Ld1(v2.V16B(), MemOperand(x17, x22, PostIndex));
   __ Ld1(v3.V16B(), v4.V16B(), MemOperand(x18, 32, PostIndex));
   __ Ld1(v5.V8H(), v6.V8H(), v7.V8H(), MemOperand(x19, 48, PostIndex));
-  __ Ld1(v16.V4S(), v17.V4S(), v18.V4S(), v19.V4S(),
+  __ Ld1(v16.V4S(),
+         v17.V4S(),
+         v18.V4S(),
+         v19.V4S(),
          MemOperand(x20, 64, PostIndex));
-  __ Ld1(v30.V2D(), v31.V2D(), v0.V2D(), v1.V2D(),
+  __ Ld1(v30.V2D(),
+         v31.V2D(),
+         v0.V2D(),
+         v1.V2D(),
          MemOperand(x21, 64, PostIndex));
   END();
 
@@ -3408,7 +3421,6 @@ TEST(neon_ld2_q_postindex) {
   ASSERT_EQUAL_128(0x232221201f1e1d1c, 0x131211100f0e0d0c, q0);
 
 
-
   ASSERT_EQUAL_64(src_base + 1, x17);
   ASSERT_EQUAL_64(src_base + 1 + 32, x18);
   ASSERT_EQUAL_64(src_base + 2 + 32, x19);
@@ -3580,8 +3592,6 @@ TEST(neon_ld2_lane_postindex) {
   ASSERT_EQUAL_128(0x1f1e1d1c07060504, 0x1716151413121110, q13);
   ASSERT_EQUAL_128(0x0706050403020100, 0x0706050403020100, q14);
   ASSERT_EQUAL_128(0x0f0e0d0c0b0a0908, 0x1716151413121110, q15);
-
-
 
 
   ASSERT_EQUAL_64(src_base + 32, x17);
@@ -4233,15 +4243,30 @@ TEST(neon_ld4_d_postindex) {
   __ Mov(x20, src_base + 3);
   __ Mov(x21, src_base + 4);
   __ Mov(x22, 1);
-  __ Ld4(v2.V8B(), v3.V8B(), v4.V8B(), v5.V8B(),
+  __ Ld4(v2.V8B(),
+         v3.V8B(),
+         v4.V8B(),
+         v5.V8B(),
          MemOperand(x17, x22, PostIndex));
-  __ Ld4(v6.V8B(), v7.V8B(), v8.V8B(), v9.V8B(),
+  __ Ld4(v6.V8B(),
+         v7.V8B(),
+         v8.V8B(),
+         v9.V8B(),
          MemOperand(x18, 32, PostIndex));
-  __ Ld4(v10.V4H(), v11.V4H(), v12.V4H(), v13.V4H(),
+  __ Ld4(v10.V4H(),
+         v11.V4H(),
+         v12.V4H(),
+         v13.V4H(),
          MemOperand(x19, 32, PostIndex));
-  __ Ld4(v14.V2S(), v15.V2S(), v16.V2S(), v17.V2S(),
+  __ Ld4(v14.V2S(),
+         v15.V2S(),
+         v16.V2S(),
+         v17.V2S(),
          MemOperand(x20, 32, PostIndex));
-  __ Ld4(v30.V2S(), v31.V2S(), v0.V2S(), v1.V2S(),
+  __ Ld4(v30.V2S(),
+         v31.V2S(),
+         v0.V2S(),
+         v1.V2S(),
          MemOperand(x21, 32, PostIndex));
   END();
 
@@ -4343,15 +4368,30 @@ TEST(neon_ld4_q_postindex) {
   __ Mov(x21, src_base + 4);
   __ Mov(x22, 1);
 
-  __ Ld4(v2.V16B(), v3.V16B(), v4.V16B(), v5.V16B(),
+  __ Ld4(v2.V16B(),
+         v3.V16B(),
+         v4.V16B(),
+         v5.V16B(),
          MemOperand(x17, x22, PostIndex));
-  __ Ld4(v6.V16B(), v7.V16B(), v8.V16B(), v9.V16B(),
+  __ Ld4(v6.V16B(),
+         v7.V16B(),
+         v8.V16B(),
+         v9.V16B(),
          MemOperand(x18, 64, PostIndex));
-  __ Ld4(v10.V8H(), v11.V8H(), v12.V8H(), v13.V8H(),
+  __ Ld4(v10.V8H(),
+         v11.V8H(),
+         v12.V8H(),
+         v13.V8H(),
          MemOperand(x19, 64, PostIndex));
-  __ Ld4(v14.V4S(), v15.V4S(), v16.V4S(), v17.V4S(),
+  __ Ld4(v14.V4S(),
+         v15.V4S(),
+         v16.V4S(),
+         v17.V4S(),
          MemOperand(x20, 64, PostIndex));
-  __ Ld4(v30.V2D(), v31.V2D(), v0.V2D(), v1.V2D(),
+  __ Ld4(v30.V2D(),
+         v31.V2D(),
+         v0.V2D(),
+         v1.V2D(),
          MemOperand(x21, 64, PostIndex));
   END();
 
@@ -4377,7 +4417,6 @@ TEST(neon_ld4_q_postindex) {
   ASSERT_EQUAL_128(0x333231302f2e2d2c, 0x131211100f0e0d0c, q31);
   ASSERT_EQUAL_128(0x3b3a393837363534, 0x1b1a191817161514, q0);
   ASSERT_EQUAL_128(0x434241403f3e3d3c, 0x232221201f1e1d1c, q1);
-
 
 
   ASSERT_EQUAL_64(src_base + 1, x17);
@@ -4497,7 +4536,6 @@ TEST(neon_ld4_lane) {
 }
 
 
-
 TEST(neon_ld4_lane_postindex) {
   SETUP();
 
@@ -4512,25 +4550,26 @@ TEST(neon_ld4_lane_postindex) {
   // Test loading whole register by element.
   __ Mov(x17, src_base);
   for (int i = 15; i >= 0; i--) {
-    __ Ld4(v0.B(), v1.B(), v2.B(), v3.B(), i,
-           MemOperand(x17, 4, PostIndex));
+    __ Ld4(v0.B(), v1.B(), v2.B(), v3.B(), i, MemOperand(x17, 4, PostIndex));
   }
 
   __ Mov(x18, src_base);
   for (int i = 7; i >= 0; i--) {
-    __ Ld4(v4.H(), v5.H(), v6.H(), v7.H(), i,
-           MemOperand(x18, 8, PostIndex));
+    __ Ld4(v4.H(), v5.H(), v6.H(), v7.H(), i, MemOperand(x18, 8, PostIndex));
   }
 
   __ Mov(x19, src_base);
   for (int i = 3; i >= 0; i--) {
-    __ Ld4(v8.S(), v9.S(), v10.S(), v11.S(), i,
-           MemOperand(x19, 16, PostIndex));
+    __ Ld4(v8.S(), v9.S(), v10.S(), v11.S(), i, MemOperand(x19, 16, PostIndex));
   }
 
   __ Mov(x20, src_base);
   for (int i = 1; i >= 0; i--) {
-    __ Ld4(v12.D(), v13.D(), v14.D(), v15.D(), i,
+    __ Ld4(v12.D(),
+           v13.D(),
+           v14.D(),
+           v15.D(),
+           i,
            MemOperand(x20, 32, PostIndex));
   }
 
@@ -4546,7 +4585,11 @@ TEST(neon_ld4_lane_postindex) {
   __ Ldr(q17, MemOperand(x4, 16, PostIndex));
   __ Ldr(q18, MemOperand(x4, 16, PostIndex));
   __ Ldr(q19, MemOperand(x4));
-  __ Ld4(v16.B(), v17.B(), v18.B(), v19.B(), 4,
+  __ Ld4(v16.B(),
+         v17.B(),
+         v18.B(),
+         v19.B(),
+         4,
          MemOperand(x21, x25, PostIndex));
   __ Add(x25, x25, 1);
 
@@ -4555,7 +4598,11 @@ TEST(neon_ld4_lane_postindex) {
   __ Ldr(q21, MemOperand(x5, 16, PostIndex));
   __ Ldr(q22, MemOperand(x5, 16, PostIndex));
   __ Ldr(q23, MemOperand(x5));
-  __ Ld4(v20.H(), v21.H(), v22.H(), v23.H(), 3,
+  __ Ld4(v20.H(),
+         v21.H(),
+         v22.H(),
+         v23.H(),
+         3,
          MemOperand(x22, x25, PostIndex));
   __ Add(x25, x25, 1);
 
@@ -4564,7 +4611,11 @@ TEST(neon_ld4_lane_postindex) {
   __ Ldr(q25, MemOperand(x6, 16, PostIndex));
   __ Ldr(q26, MemOperand(x6, 16, PostIndex));
   __ Ldr(q27, MemOperand(x6));
-  __ Ld4(v24.S(), v25.S(), v26.S(), v27.S(), 2,
+  __ Ld4(v24.S(),
+         v25.S(),
+         v26.S(),
+         v27.S(),
+         2,
          MemOperand(x23, x25, PostIndex));
   __ Add(x25, x25, 1);
 
@@ -4573,7 +4624,11 @@ TEST(neon_ld4_lane_postindex) {
   __ Ldr(q29, MemOperand(x7, 16, PostIndex));
   __ Ldr(q30, MemOperand(x7, 16, PostIndex));
   __ Ldr(q31, MemOperand(x7));
-  __ Ld4(v28.D(), v29.D(), v30.D(), v31.D(), 1,
+  __ Ld4(v28.D(),
+         v29.D(),
+         v30.D(),
+         v31.D(),
+         1,
          MemOperand(x24, x25, PostIndex));
 
   END();
@@ -4704,19 +4759,40 @@ TEST(neon_ld4_alllanes_postindex) {
   START();
   __ Mov(x17, src_base + 1);
   __ Mov(x18, 1);
-  __ Ld4r(v0.V8B(), v1.V8B(), v2.V8B(), v3.V8B(),
+  __ Ld4r(v0.V8B(),
+          v1.V8B(),
+          v2.V8B(),
+          v3.V8B(),
           MemOperand(x17, 4, PostIndex));
-  __ Ld4r(v4.V16B(), v5.V16B(), v6.V16B(), v7.V16B(),
+  __ Ld4r(v4.V16B(),
+          v5.V16B(),
+          v6.V16B(),
+          v7.V16B(),
           MemOperand(x17, x18, PostIndex));
-  __ Ld4r(v8.V4H(), v9.V4H(), v10.V4H(), v11.V4H(),
+  __ Ld4r(v8.V4H(),
+          v9.V4H(),
+          v10.V4H(),
+          v11.V4H(),
           MemOperand(x17, x18, PostIndex));
-  __ Ld4r(v12.V8H(), v13.V8H(), v14.V8H(), v15.V8H(),
+  __ Ld4r(v12.V8H(),
+          v13.V8H(),
+          v14.V8H(),
+          v15.V8H(),
           MemOperand(x17, 8, PostIndex));
-  __ Ld4r(v16.V2S(), v17.V2S(), v18.V2S(), v19.V2S(),
+  __ Ld4r(v16.V2S(),
+          v17.V2S(),
+          v18.V2S(),
+          v19.V2S(),
           MemOperand(x17, x18, PostIndex));
-  __ Ld4r(v20.V4S(), v21.V4S(), v22.V4S(), v23.V4S(),
+  __ Ld4r(v20.V4S(),
+          v21.V4S(),
+          v22.V4S(),
+          v23.V4S(),
           MemOperand(x17, 16, PostIndex));
-  __ Ld4r(v24.V2D(), v25.V2D(), v26.V2D(), v27.V2D(),
+  __ Ld4r(v24.V2D(),
+          v25.V2D(),
+          v26.V2D(),
+          v27.V2D(),
           MemOperand(x17, 32, PostIndex));
   END();
 
@@ -5375,12 +5451,18 @@ TEST(neon_st1_d_postindex) {
   __ Ldr(d19, MemOperand(x17, x19));
   __ Ldr(d20, MemOperand(x17, x18));
 
-  __ St1(v0.V2S(), v1.V2S(), v2.V2S(), v3.V2S(),
+  __ St1(v0.V2S(),
+         v1.V2S(),
+         v2.V2S(),
+         v3.V2S(),
          MemOperand(x17, 32, PostIndex));
   __ Ldr(q21, MemOperand(x17, x21));
   __ Ldr(q22, MemOperand(x17, x19));
 
-  __ St1(v0.V1D(), v1.V1D(), v2.V1D(), v3.V1D(),
+  __ St1(v0.V1D(),
+         v1.V1D(),
+         v2.V1D(),
+         v3.V1D(),
          MemOperand(x17, 32, PostIndex));
   __ Ldr(q23, MemOperand(x17, x21));
   __ Ldr(q24, MemOperand(x17, x19));
@@ -5486,7 +5568,10 @@ TEST(neon_st1_q_postindex) {
   __ Ldr(q20, MemOperand(x17, x19));
   __ Ldr(q21, MemOperand(x17, x18));
 
-  __ St1(v0.V2D(), v1.V2D(), v2.V2D(), v3.V2D(),
+  __ St1(v0.V2D(),
+         v1.V2D(),
+         v2.V2D(),
+         v3.V2D(),
          MemOperand(x17, 64, PostIndex));
   __ Ldr(q22, MemOperand(x17, x21));
   __ Ldr(q23, MemOperand(x17, x20));
@@ -5515,7 +5600,7 @@ TEST(neon_st1_q_postindex) {
 TEST(neon_st2_d) {
   SETUP();
 
-  uint8_t src[4*16];
+  uint8_t src[4 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5555,7 +5640,7 @@ TEST(neon_st2_d) {
 TEST(neon_st2_d_postindex) {
   SETUP();
 
-  uint8_t src[4*16];
+  uint8_t src[4 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5593,7 +5678,7 @@ TEST(neon_st2_d_postindex) {
 TEST(neon_st2_q) {
   SETUP();
 
-  uint8_t src[5*16];
+  uint8_t src[5 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5634,7 +5719,7 @@ TEST(neon_st2_q) {
 TEST(neon_st2_q_postindex) {
   SETUP();
 
-  uint8_t src[5*16];
+  uint8_t src[5 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5676,7 +5761,7 @@ TEST(neon_st2_q_postindex) {
 TEST(neon_st3_d) {
   SETUP();
 
-  uint8_t src[3*16];
+  uint8_t src[3 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5714,7 +5799,7 @@ TEST(neon_st3_d) {
 TEST(neon_st3_d_postindex) {
   SETUP();
 
-  uint8_t src[4*16];
+  uint8_t src[4 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5755,7 +5840,7 @@ TEST(neon_st3_d_postindex) {
 TEST(neon_st3_q) {
   SETUP();
 
-  uint8_t src[6*16];
+  uint8_t src[6 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5802,7 +5887,7 @@ TEST(neon_st3_q) {
 TEST(neon_st3_q_postindex) {
   SETUP();
 
-  uint8_t src[7*16];
+  uint8_t src[7 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5849,7 +5934,7 @@ TEST(neon_st3_q_postindex) {
 TEST(neon_st4_d) {
   SETUP();
 
-  uint8_t src[4*16];
+  uint8_t src[4 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5892,7 +5977,7 @@ TEST(neon_st4_d) {
 TEST(neon_st4_d_postindex) {
   SETUP();
 
-  uint8_t src[5*16];
+  uint8_t src[5 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5907,12 +5992,17 @@ TEST(neon_st4_d_postindex) {
   __ Ldr(q2, MemOperand(x17, 16, PostIndex));
   __ Ldr(q3, MemOperand(x17, 16, PostIndex));
 
-  __ St4(v0.V8B(), v1.V8B(), v2.V8B(), v3.V8B(),
+  __ St4(v0.V8B(),
+         v1.V8B(),
+         v2.V8B(),
+         v3.V8B(),
          MemOperand(x18, x22, PostIndex));
-  __ St4(v0.V4H(), v1.V4H(), v2.V4H(), v3.V4H(),
+  __ St4(v0.V4H(),
+         v1.V4H(),
+         v2.V4H(),
+         v3.V4H(),
          MemOperand(x18, 32, PostIndex));
-  __ St4(v0.V2S(), v1.V2S(), v2.V2S(), v3.V2S(),
-         MemOperand(x18));
+  __ St4(v0.V2S(), v1.V2S(), v2.V2S(), v3.V2S(), MemOperand(x18));
 
 
   __ Mov(x19, src_base);
@@ -5939,7 +6029,7 @@ TEST(neon_st4_d_postindex) {
 TEST(neon_st4_q) {
   SETUP();
 
-  uint8_t src[7*16];
+  uint8_t src[7 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -5990,7 +6080,7 @@ TEST(neon_st4_q) {
 TEST(neon_st4_q_postindex) {
   SETUP();
 
-  uint8_t src[9*16];
+  uint8_t src[9 * 16];
   for (unsigned i = 0; i < sizeof(src); i++) {
     src[i] = i;
   }
@@ -6005,14 +6095,22 @@ TEST(neon_st4_q_postindex) {
   __ Ldr(q2, MemOperand(x17, 16, PostIndex));
   __ Ldr(q3, MemOperand(x17, 16, PostIndex));
 
-  __ St4(v0.V16B(), v1.V16B(), v2.V16B(), v3.V16B(),
+  __ St4(v0.V16B(),
+         v1.V16B(),
+         v2.V16B(),
+         v3.V16B(),
          MemOperand(x18, x22, PostIndex));
-  __ St4(v0.V8H(), v1.V8H(), v2.V8H(), v3.V8H(),
+  __ St4(v0.V8H(),
+         v1.V8H(),
+         v2.V8H(),
+         v3.V8H(),
          MemOperand(x18, 64, PostIndex));
-  __ St4(v0.V4S(), v1.V4S(), v2.V4S(), v3.V4S(),
+  __ St4(v0.V4S(),
+         v1.V4S(),
+         v2.V4S(),
+         v3.V4S(),
          MemOperand(x18, x22, PostIndex));
-  __ St4(v0.V2D(), v1.V2D(), v2.V2D(), v3.V2D(),
-         MemOperand(x18));
+  __ St4(v0.V2D(), v1.V2D(), v2.V2D(), v3.V2D(), MemOperand(x18));
 
   __ Mov(x19, src_base);
   __ Ldr(q0, MemOperand(x19, 16, PostIndex));
@@ -6141,7 +6239,12 @@ TEST(neon_destructive_tbl) {
   __ Mov(v27, v1);
   __ Mov(v28, v2);
   __ Mov(v29, v3);
-  __ Tbl(v26.V16B(), v26.V16B(), v27.V16B(), v28.V16B(), v29.V16B(), v26.V16B());
+  __ Tbl(v26.V16B(),
+         v26.V16B(),
+         v27.V16B(),
+         v28.V16B(),
+         v29.V16B(),
+         v26.V16B());
   END();
 
   RUN();
@@ -6192,7 +6295,12 @@ TEST(neon_destructive_tbx) {
   __ Mov(v27, v1);
   __ Mov(v28, v2);
   __ Mov(v29, v3);
-  __ Tbx(v26.V16B(), v26.V16B(), v27.V16B(), v28.V16B(), v29.V16B(), v26.V16B());
+  __ Tbx(v26.V16B(),
+         v26.V16B(),
+         v27.V16B(),
+         v28.V16B(),
+         v29.V16B(),
+         v26.V16B());
   END();
 
   RUN();
@@ -6310,8 +6418,10 @@ TEST(ldp_stp_double) {
 TEST(ldp_stp_quad) {
   SETUP();
 
-  uint64_t src[4] = {0x0123456789abcdef, 0xaaaaaaaa55555555,
-                     0xfedcba9876543210, 0x55555555aaaaaaaa};
+  uint64_t src[4] = {0x0123456789abcdef,
+                     0xaaaaaaaa55555555,
+                     0xfedcba9876543210,
+                     0x55555555aaaaaaaa};
   uint64_t dst[6] = {0, 0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
   uintptr_t dst_base = reinterpret_cast<uintptr_t>(dst);
@@ -6343,7 +6453,8 @@ TEST(ldp_stp_quad) {
 TEST(ldp_stp_offset) {
   SETUP();
 
-  uint64_t src[3] = {0x0011223344556677, 0x8899aabbccddeeff,
+  uint64_t src[3] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
                      0xffeeddccbbaa9988};
   uint64_t dst[7] = {0, 0, 0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
@@ -6397,7 +6508,8 @@ TEST(ldp_stp_offset) {
 TEST(ldp_stp_offset_wide) {
   SETUP();
 
-  uint64_t src[3] = {0x0011223344556677, 0x8899aabbccddeeff,
+  uint64_t src[3] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
                      0xffeeddccbbaa9988};
   uint64_t dst[7] = {0, 0, 0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
@@ -6454,8 +6566,10 @@ TEST(ldp_stp_offset_wide) {
 TEST(ldnp_stnp_offset) {
   SETUP();
 
-  uint64_t src[4] = {0x0011223344556677, 0x8899aabbccddeeff,
-                     0xffeeddccbbaa9988, 0x7766554433221100};
+  uint64_t src[4] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
+                     0xffeeddccbbaa9988,
+                     0x7766554433221100};
   uint64_t dst[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
   uintptr_t dst_base = reinterpret_cast<uintptr_t>(dst);
@@ -6626,7 +6740,8 @@ TEST(ldnp_stnp_offset_double) {
 TEST(ldp_stp_preindex) {
   SETUP();
 
-  uint64_t src[3] = {0x0011223344556677, 0x8899aabbccddeeff,
+  uint64_t src[3] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
                      0xffeeddccbbaa9988};
   uint64_t dst[5] = {0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
@@ -6680,7 +6795,8 @@ TEST(ldp_stp_preindex) {
 TEST(ldp_stp_preindex_wide) {
   SETUP();
 
-  uint64_t src[3] = {0x0011223344556677, 0x8899aabbccddeeff,
+  uint64_t src[3] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
                      0xffeeddccbbaa9988};
   uint64_t dst[5] = {0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
@@ -6697,7 +6813,7 @@ TEST(ldp_stp_preindex_wide) {
   __ Mov(x19, x24);
   __ Mov(x24, src_base - base_offset + 4);
   __ Ldp(w2, w3, MemOperand(x24, base_offset - 4, PreIndex));
-  __ Stp(w2, w3, MemOperand(x25, 4 - base_offset , PreIndex));
+  __ Stp(w2, w3, MemOperand(x25, 4 - base_offset, PreIndex));
   __ Mov(x20, x25);
   __ Mov(x25, dst_base + base_offset + 4);
   __ Mov(x24, src_base - base_offset);
@@ -6742,8 +6858,10 @@ TEST(ldp_stp_preindex_wide) {
 TEST(ldp_stp_postindex) {
   SETUP();
 
-  uint64_t src[4] = {0x0011223344556677, 0x8899aabbccddeeff,
-                     0xffeeddccbbaa9988, 0x7766554433221100};
+  uint64_t src[4] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
+                     0xffeeddccbbaa9988,
+                     0x7766554433221100};
   uint64_t dst[5] = {0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
   uintptr_t dst_base = reinterpret_cast<uintptr_t>(dst);
@@ -6796,8 +6914,10 @@ TEST(ldp_stp_postindex) {
 TEST(ldp_stp_postindex_wide) {
   SETUP();
 
-  uint64_t src[4] = {0x0011223344556677, 0x8899aabbccddeeff,
-                     0xffeeddccbbaa9988, 0x7766554433221100};
+  uint64_t src[4] = {0x0011223344556677,
+                     0x8899aabbccddeeff,
+                     0xffeeddccbbaa9988,
+                     0x7766554433221100};
   uint64_t dst[5] = {0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
   uintptr_t dst_base = reinterpret_cast<uintptr_t>(dst);
@@ -6922,8 +7042,7 @@ TEST(ldur_stur) {
 TEST(ldur_stur_fp) {
   SETUP();
 
-  int64_t src[3] = {0x0123456789abcdef, 0x0123456789abcdef,
-                    0x0123456789abcdef};
+  int64_t src[3] = {0x0123456789abcdef, 0x0123456789abcdef, 0x0123456789abcdef};
   int64_t dst[5] = {0, 0, 0, 0, 0};
   uintptr_t src_base = reinterpret_cast<uintptr_t>(src);
   uintptr_t dst_base = reinterpret_cast<uintptr_t>(dst);
@@ -7050,10 +7169,12 @@ TEST(ldr_literal_range) {
 TEST(ldr_literal_values_q) {
   SETUP();
 
-  static const uint64_t kHalfValues[] = {
-    0x8000000000000000, 0x7fffffffffffffff, 0x0000000000000000,
-    0xffffffffffffffff, 0x00ff00ff00ff00ff, 0x1234567890abcdef
-  };
+  static const uint64_t kHalfValues[] = {0x8000000000000000,
+                                         0x7fffffffffffffff,
+                                         0x0000000000000000,
+                                         0xffffffffffffffff,
+                                         0x00ff00ff00ff00ff,
+                                         0x1234567890abcdef};
   const int card = sizeof(kHalfValues) / sizeof(kHalfValues[0]);
   const Register& ref_low64 = x1;
   const Register& ref_high64 = x2;
@@ -7091,9 +7212,9 @@ template <typename T>
 void LoadIntValueHelper(T values[], int card) {
   SETUP();
 
-  const bool is_32bits = (sizeof(T) == 4);
-  const Register& tgt1 = is_32bits ? w1 : x1;
-  const Register& tgt2 = is_32bits ? w2 : x2;
+  const bool is_32bit = (sizeof(T) == 4);
+  Register tgt1 = is_32bit ? Register(w1) : Register(x1);
+  Register tgt2 = is_32bit ? Register(w2) : Register(x2);
 
   START();
   __ Mov(x0, 0);
@@ -7117,20 +7238,25 @@ void LoadIntValueHelper(T values[], int card) {
 
 
 TEST(ldr_literal_values_x) {
-  static const uint64_t kValues[] = {
-    0x8000000000000000, 0x7fffffffffffffff, 0x0000000000000000,
-    0xffffffffffffffff, 0x00ff00ff00ff00ff, 0x1234567890abcdef
-  };
+  static const uint64_t kValues[] = {0x8000000000000000,
+                                     0x7fffffffffffffff,
+                                     0x0000000000000000,
+                                     0xffffffffffffffff,
+                                     0x00ff00ff00ff00ff,
+                                     0x1234567890abcdef};
 
   LoadIntValueHelper(kValues, sizeof(kValues) / sizeof(kValues[0]));
 }
 
 
 TEST(ldr_literal_values_w) {
-  static const uint32_t kValues[] = {
-    0x80000000, 0x7fffffff, 0x00000000, 0xffffffff, 0x00ff00ff, 0x12345678,
-    0x90abcdef
-  };
+  static const uint32_t kValues[] = {0x80000000,
+                                     0x7fffffff,
+                                     0x00000000,
+                                     0xffffffff,
+                                     0x00ff00ff,
+                                     0x12345678,
+                                     0x90abcdef};
 
   LoadIntValueHelper(kValues, sizeof(kValues) / sizeof(kValues[0]));
 }
@@ -7142,16 +7268,16 @@ void LoadFPValueHelper(T values[], int card) {
 
   const bool is_32bits = (sizeof(T) == 4);
   const FPRegister& fp_tgt = is_32bits ? s2 : d2;
-  const Register& tgt1 = is_32bits ? w1 : x1;
-  const Register& tgt2 = is_32bits ? w2 : x2;
+  const Register& tgt1 = is_32bits ? Register(w1) : Register(x1);
+  const Register& tgt2 = is_32bits ? Register(w2) : Register(x2);
 
   START();
   __ Mov(x0, 0);
 
   // If one of the values differ then x0 will be one.
   for (int i = 0; i < card; ++i) {
-    __ Mov(tgt1, is_32bits ? FloatToRawbits(values[i])
-                           : DoubleToRawbits(values[i]));
+    __ Mov(tgt1,
+           is_32bits ? FloatToRawbits(values[i]) : DoubleToRawbits(values[i]));
     __ Ldr(fp_tgt, values[i]);
     __ Fmov(tgt2, fp_tgt);
     __ Cmp(tgt1, tgt2);
@@ -7168,18 +7294,14 @@ void LoadFPValueHelper(T values[], int card) {
 }
 
 TEST(ldr_literal_values_d) {
-  static const double kValues[] = {
-    -0.0, 0.0, -1.0, 1.0, -1e10, 1e10
-  };
+  static const double kValues[] = {-0.0, 0.0, -1.0, 1.0, -1e10, 1e10};
 
   LoadFPValueHelper(kValues, sizeof(kValues) / sizeof(kValues[0]));
 }
 
 
 TEST(ldr_literal_values_s) {
-  static const float kValues[] = {
-    -0.0, 0.0, -1.0, 1.0, -1e10, 1e10
-  };
+  static const float kValues[] = {-0.0, 0.0, -1.0, 1.0, -1e10, 1e10};
 
   LoadFPValueHelper(kValues, sizeof(kValues) / sizeof(kValues[0]));
 }
@@ -7187,16 +7309,19 @@ TEST(ldr_literal_values_s) {
 
 TEST(ldr_literal_custom) {
   SETUP();
-  ALLOW_ASM();
 
   Label end_of_pool_before;
   Label end_of_pool_after;
+
+  const size_t kSizeOfPoolInBytes = 44;
+
   Literal<uint64_t> before_x(0x1234567890abcdef);
   Literal<uint32_t> before_w(0xfedcba09);
   Literal<uint32_t> before_sx(0x80000000);
   Literal<uint64_t> before_q(0x1234000056780000, 0xabcd0000ef000000);
   Literal<double> before_d(1.234);
   Literal<float> before_s(2.5);
+
   Literal<uint64_t> after_x(0x1234567890abcdef);
   Literal<uint32_t> after_w(0xfedcba09);
   Literal<uint32_t> after_sx(0x80000000);
@@ -7208,36 +7333,45 @@ TEST(ldr_literal_custom) {
 
   // Manually generate a pool.
   __ B(&end_of_pool_before);
-  __ place(&before_x);
-  __ place(&before_w);
-  __ place(&before_sx);
-  __ place(&before_q);
-  __ place(&before_d);
-  __ place(&before_s);
+  {
+    ExactAssemblyScope scope(&masm, kSizeOfPoolInBytes);
+    __ place(&before_x);
+    __ place(&before_w);
+    __ place(&before_sx);
+    __ place(&before_q);
+    __ place(&before_d);
+    __ place(&before_s);
+  }
   __ Bind(&end_of_pool_before);
 
-  __ ldr(x2, &before_x);
-  __ ldr(w3, &before_w);
-  __ ldrsw(x5, &before_sx);
-  __ ldr(q11, &before_q);
-  __ ldr(d13, &before_d);
-  __ ldr(s25, &before_s);
+  {
+    ExactAssemblyScope scope(&masm, 12 * kInstructionSize);
+    __ ldr(x2, &before_x);
+    __ ldr(w3, &before_w);
+    __ ldrsw(x5, &before_sx);
+    __ ldr(q11, &before_q);
+    __ ldr(d13, &before_d);
+    __ ldr(s25, &before_s);
 
-  __ ldr(x6, &after_x);
-  __ ldr(w7, &after_w);
-  __ ldrsw(x8, &after_sx);
-  __ ldr(q18, &after_q);
-  __ ldr(d14, &after_d);
-  __ ldr(s26, &after_s);
+    __ ldr(x6, &after_x);
+    __ ldr(w7, &after_w);
+    __ ldrsw(x8, &after_sx);
+    __ ldr(q18, &after_q);
+    __ ldr(d14, &after_d);
+    __ ldr(s26, &after_s);
+  }
 
   // Manually generate a pool.
   __ B(&end_of_pool_after);
-  __ place(&after_x);
-  __ place(&after_w);
-  __ place(&after_sx);
-  __ place(&after_q);
-  __ place(&after_d);
-  __ place(&after_s);
+  {
+    ExactAssemblyScope scope(&masm, kSizeOfPoolInBytes);
+    __ place(&after_x);
+    __ place(&after_w);
+    __ place(&after_sx);
+    __ place(&after_q);
+    __ place(&after_d);
+    __ place(&after_s);
+  }
   __ Bind(&end_of_pool_after);
 
   END();
@@ -7264,15 +7398,18 @@ TEST(ldr_literal_custom) {
 
 TEST(ldr_literal_custom_shared) {
   SETUP();
-  ALLOW_ASM();
 
   Label end_of_pool_before;
   Label end_of_pool_after;
+
+  const size_t kSizeOfPoolInBytes = 40;
+
   Literal<uint64_t> before_x(0x1234567890abcdef);
   Literal<uint32_t> before_w(0xfedcba09);
   Literal<uint64_t> before_q(0x1234000056780000, 0xabcd0000ef000000);
   Literal<double> before_d(1.234);
   Literal<float> before_s(2.5);
+
   Literal<uint64_t> after_x(0x1234567890abcdef);
   Literal<uint32_t> after_w(0xfedcba09);
   Literal<uint64_t> after_q(0x1234000056780000, 0xabcd0000ef000000);
@@ -7283,25 +7420,29 @@ TEST(ldr_literal_custom_shared) {
 
   // Manually generate a pool.
   __ B(&end_of_pool_before);
-  __ place(&before_x);
-  __ place(&before_w);
-  __ place(&before_q);
-  __ place(&before_d);
-  __ place(&before_s);
+  {
+    ExactAssemblyScope scope(&masm, kSizeOfPoolInBytes);
+    __ place(&before_x);
+    __ place(&before_w);
+    __ place(&before_q);
+    __ place(&before_d);
+    __ place(&before_s);
+  }
   __ Bind(&end_of_pool_before);
 
   // Load the entries several times to test that literals can be shared.
   for (int i = 0; i < 50; i++) {
+    ExactAssemblyScope scope(&masm, 12 * kInstructionSize);
     __ ldr(x2, &before_x);
     __ ldr(w3, &before_w);
-    __ ldrsw(x5, &before_w);    // Re-use before_w.
+    __ ldrsw(x5, &before_w);  // Re-use before_w.
     __ ldr(q11, &before_q);
     __ ldr(d13, &before_d);
     __ ldr(s25, &before_s);
 
     __ ldr(x6, &after_x);
     __ ldr(w7, &after_w);
-    __ ldrsw(x8, &after_w);     // Re-use after_w.
+    __ ldrsw(x8, &after_w);  // Re-use after_w.
     __ ldr(q18, &after_q);
     __ ldr(d14, &after_d);
     __ ldr(s26, &after_s);
@@ -7309,11 +7450,14 @@ TEST(ldr_literal_custom_shared) {
 
   // Manually generate a pool.
   __ B(&end_of_pool_after);
-  __ place(&after_x);
-  __ place(&after_w);
-  __ place(&after_q);
-  __ place(&after_d);
-  __ place(&after_s);
+  {
+    ExactAssemblyScope scope(&masm, kSizeOfPoolInBytes);
+    __ place(&after_x);
+    __ place(&after_w);
+    __ place(&after_q);
+    __ place(&after_d);
+    __ place(&after_s);
+  }
   __ Bind(&end_of_pool_after);
 
   END();
@@ -7417,13 +7561,13 @@ TEST(prfm_regoffset) {
 
 TEST(prfm_literal_imm19) {
   SETUP();
-  ALLOW_ASM();
   START();
 
   for (int i = 0; i < (1 << ImmPrefetchOperation_width); i++) {
     // Unallocated prefetch operations are ignored, so test all of them.
     PrefetchOperation op = static_cast<PrefetchOperation>(i);
 
+    ExactAssemblyScope scope(&masm, 7 * kInstructionSize);
     // The address used in prfm doesn't have to be valid.
     __ prfm(op, INT64_C(0));
     __ prfm(op, 1);
@@ -7442,7 +7586,6 @@ TEST(prfm_literal_imm19) {
 
 TEST(prfm_literal) {
   SETUP();
-  ALLOW_ASM();
 
   Label end_of_pool_before;
   Label end_of_pool_after;
@@ -7453,21 +7596,27 @@ TEST(prfm_literal) {
 
   // Manually generate a pool.
   __ B(&end_of_pool_before);
-  __ place(&before);
+  {
+    ExactAssemblyScope scope(&masm, before.GetSize());
+    __ place(&before);
+  }
   __ Bind(&end_of_pool_before);
 
   for (int i = 0; i < (1 << ImmPrefetchOperation_width); i++) {
     // Unallocated prefetch operations are ignored, so test all of them.
     PrefetchOperation op = static_cast<PrefetchOperation>(i);
 
-    CodeBufferCheckScope guard(&masm, 2 * kInstructionSize);
+    ExactAssemblyScope guard(&masm, 2 * kInstructionSize);
     __ prfm(op, &before);
     __ prfm(op, &after);
   }
 
   // Manually generate a pool.
   __ B(&end_of_pool_after);
-  __ place(&after);
+  {
+    ExactAssemblyScope scope(&masm, after.GetSize());
+    __ place(&after);
+  }
   __ Bind(&end_of_pool_after);
 
   END();
@@ -7502,10 +7651,12 @@ TEST(prfm_wide) {
 TEST(load_prfm_literal) {
   // Test literals shared between both prfm and ldr.
   SETUP();
-  ALLOW_ASM();
 
   Label end_of_pool_before;
   Label end_of_pool_after;
+
+  const size_t kSizeOfPoolInBytes = 28;
+
   Literal<uint64_t> before_x(0x1234567890abcdef);
   Literal<uint32_t> before_w(0xfedcba09);
   Literal<uint32_t> before_sx(0x80000000);
@@ -7521,16 +7672,20 @@ TEST(load_prfm_literal) {
 
   // Manually generate a pool.
   __ B(&end_of_pool_before);
-  __ place(&before_x);
-  __ place(&before_w);
-  __ place(&before_sx);
-  __ place(&before_d);
-  __ place(&before_s);
+  {
+    ExactAssemblyScope scope(&masm, kSizeOfPoolInBytes);
+    __ place(&before_x);
+    __ place(&before_w);
+    __ place(&before_sx);
+    __ place(&before_d);
+    __ place(&before_s);
+  }
   __ Bind(&end_of_pool_before);
 
   for (int i = 0; i < (1 << ImmPrefetchOperation_width); i++) {
     // Unallocated prefetch operations are ignored, so test all of them.
     PrefetchOperation op = static_cast<PrefetchOperation>(i);
+    ExactAssemblyScope scope(&masm, 10 * kInstructionSize);
 
     __ prfm(op, &before_x);
     __ prfm(op, &before_w);
@@ -7545,25 +7700,31 @@ TEST(load_prfm_literal) {
     __ prfm(op, &after_s);
   }
 
-  __ ldr(x2, &before_x);
-  __ ldr(w3, &before_w);
-  __ ldrsw(x5, &before_sx);
-  __ ldr(d13, &before_d);
-  __ ldr(s25, &before_s);
+  {
+    ExactAssemblyScope scope(&masm, 10 * kInstructionSize);
+    __ ldr(x2, &before_x);
+    __ ldr(w3, &before_w);
+    __ ldrsw(x5, &before_sx);
+    __ ldr(d13, &before_d);
+    __ ldr(s25, &before_s);
 
-  __ ldr(x6, &after_x);
-  __ ldr(w7, &after_w);
-  __ ldrsw(x8, &after_sx);
-  __ ldr(d14, &after_d);
-  __ ldr(s26, &after_s);
+    __ ldr(x6, &after_x);
+    __ ldr(w7, &after_w);
+    __ ldrsw(x8, &after_sx);
+    __ ldr(d14, &after_d);
+    __ ldr(s26, &after_s);
+  }
 
   // Manually generate a pool.
   __ B(&end_of_pool_after);
-  __ place(&after_x);
-  __ place(&after_w);
-  __ place(&after_sx);
-  __ place(&after_d);
-  __ place(&after_s);
+  {
+    ExactAssemblyScope scope(&masm, kSizeOfPoolInBytes);
+    __ place(&after_x);
+    __ place(&after_w);
+    __ place(&after_sx);
+    __ place(&after_d);
+    __ place(&after_s);
+  }
   __ Bind(&end_of_pool_after);
 
   END();
@@ -7954,9 +8115,9 @@ TEST(neg) {
 }
 
 
-template<typename T, typename Op>
-static void AdcsSbcsHelper(Op op, T left, T right, int carry,
-                           T expected, StatusFlags expected_flags) {
+template <typename T, typename Op>
+static void AdcsSbcsHelper(
+    Op op, T left, T right, int carry, T expected, StatusFlags expected_flags) {
   int reg_size = sizeof(T) * 8;
   Register left_reg(0, reg_size);
   Register right_reg(1, reg_size);
@@ -7986,10 +8147,14 @@ static void AdcsSbcsHelper(Op op, T left, T right, int carry,
 
 TEST(adcs_sbcs_x) {
   uint64_t inputs[] = {
-    0x0000000000000000, 0x0000000000000001,
-    0x7ffffffffffffffe, 0x7fffffffffffffff,
-    0x8000000000000000, 0x8000000000000001,
-    0xfffffffffffffffe, 0xffffffffffffffff,
+      0x0000000000000000,
+      0x0000000000000001,
+      0x7ffffffffffffffe,
+      0x7fffffffffffffff,
+      0x8000000000000000,
+      0x8000000000000001,
+      0xfffffffffffffffe,
+      0xffffffffffffffff,
   };
   static const size_t input_count = sizeof(inputs) / sizeof(inputs[0]);
 
@@ -8000,157 +8165,171 @@ TEST(adcs_sbcs_x) {
     StatusFlags carry1_flags;
   };
 
-  static const Expected expected_adcs_x[input_count][input_count] = {
-    {{0x0000000000000000, ZFlag, 0x0000000000000001, NoFlag},
-     {0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag},
-     {0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0x8000000000000000, NFlag, 0x8000000000000001, NFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag}},
-    {{0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag},
-     {0x0000000000000002, NoFlag, 0x0000000000000003, NoFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag}},
-    {{0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0xfffffffffffffffc, NVFlag, 0xfffffffffffffffd, NVFlag},
-     {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag}},
-    {{0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
-     {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
-     {0xfffffffffffffffe, NVFlag, 0xffffffffffffffff, NVFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag}},
-    {{0x8000000000000000, NFlag, 0x8000000000000001, NFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x0000000000000000, ZCVFlag, 0x0000000000000001, CVFlag},
-     {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
-     {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag}},
-    {{0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
-     {0x0000000000000002, CVFlag, 0x0000000000000003, CVFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag}},
-    {{0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0xfffffffffffffffc, NCFlag, 0xfffffffffffffffd, NCFlag},
-     {0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag}},
-    {{0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag},
-     {0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag},
-     {0xfffffffffffffffe, NCFlag, 0xffffffffffffffff, NCFlag}}
-  };
+  static const Expected expected_adcs_x[input_count][input_count] =
+      {{{0x0000000000000000, ZFlag, 0x0000000000000001, NoFlag},
+        {0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag},
+        {0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0x8000000000000000, NFlag, 0x8000000000000001, NFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag}},
+       {{0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag},
+        {0x0000000000000002, NoFlag, 0x0000000000000003, NoFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag}},
+       {{0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0xfffffffffffffffc, NVFlag, 0xfffffffffffffffd, NVFlag},
+        {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag}},
+       {{0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
+        {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
+        {0xfffffffffffffffe, NVFlag, 0xffffffffffffffff, NVFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag}},
+       {{0x8000000000000000, NFlag, 0x8000000000000001, NFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x0000000000000000, ZCVFlag, 0x0000000000000001, CVFlag},
+        {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
+        {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag}},
+       {{0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
+        {0x0000000000000002, CVFlag, 0x0000000000000003, CVFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag}},
+       {{0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0xfffffffffffffffc, NCFlag, 0xfffffffffffffffd, NCFlag},
+        {0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag}},
+       {{0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag},
+        {0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag},
+        {0xfffffffffffffffe, NCFlag, 0xffffffffffffffff, NCFlag}}};
 
-  static const Expected expected_sbcs_x[input_count][input_count] = {
-    {{0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0x8000000000000000, NFlag, 0x8000000000000001, NFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag},
-     {0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag},
-     {0x0000000000000000, ZFlag, 0x0000000000000001, NoFlag}},
-    {{0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0x0000000000000002, NoFlag, 0x0000000000000003, NoFlag},
-     {0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag}},
-    {{0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
-     {0xfffffffffffffffc, NVFlag, 0xfffffffffffffffd, NVFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
-     {0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag}},
-    {{0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0xfffffffffffffffe, NVFlag, 0xffffffffffffffff, NVFlag},
-     {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
-     {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
-     {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag}},
-    {{0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
-     {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
-     {0x0000000000000000, ZCVFlag, 0x0000000000000001, CVFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
-     {0x8000000000000000, NFlag, 0x8000000000000001, NFlag}},
-    {{0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0x0000000000000002, CVFlag, 0x0000000000000003, CVFlag},
-     {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
-     {0x8000000000000001, NFlag, 0x8000000000000002, NFlag}},
-    {{0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag},
-     {0xfffffffffffffffc, NCFlag, 0xfffffffffffffffd, NCFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
-     {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag}},
-    {{0xfffffffffffffffe, NCFlag, 0xffffffffffffffff, NCFlag},
-     {0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag},
-     {0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag},
-     {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
-     {0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag},
-     {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
-     {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
-     {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag}}
-  };
+  static const Expected expected_sbcs_x[input_count][input_count] =
+      {{{0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0x8000000000000000, NFlag, 0x8000000000000001, NFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag},
+        {0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag},
+        {0x0000000000000000, ZFlag, 0x0000000000000001, NoFlag}},
+       {{0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0x0000000000000002, NoFlag, 0x0000000000000003, NoFlag},
+        {0x0000000000000001, NoFlag, 0x0000000000000002, NoFlag}},
+       {{0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
+        {0xfffffffffffffffc, NVFlag, 0xfffffffffffffffd, NVFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag},
+        {0x7ffffffffffffffe, NoFlag, 0x7fffffffffffffff, NoFlag}},
+       {{0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0xfffffffffffffffe, NVFlag, 0xffffffffffffffff, NVFlag},
+        {0xfffffffffffffffd, NVFlag, 0xfffffffffffffffe, NVFlag},
+        {0x8000000000000000, NVFlag, 0x8000000000000001, NVFlag},
+        {0x7fffffffffffffff, NoFlag, 0x8000000000000000, NVFlag}},
+       {{0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
+        {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
+        {0x0000000000000000, ZCVFlag, 0x0000000000000001, CVFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag},
+        {0x8000000000000000, NFlag, 0x8000000000000001, NFlag}},
+       {{0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0x0000000000000002, CVFlag, 0x0000000000000003, CVFlag},
+        {0x0000000000000001, CVFlag, 0x0000000000000002, CVFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0x8000000000000002, NFlag, 0x8000000000000003, NFlag},
+        {0x8000000000000001, NFlag, 0x8000000000000002, NFlag}},
+       {{0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag},
+        {0xfffffffffffffffc, NCFlag, 0xfffffffffffffffd, NCFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0x7ffffffffffffffe, CVFlag, 0x7fffffffffffffff, CVFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x7ffffffffffffffc, CFlag, 0x7ffffffffffffffd, CFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag},
+        {0xfffffffffffffffe, NFlag, 0xffffffffffffffff, NFlag}},
+       {{0xfffffffffffffffe, NCFlag, 0xffffffffffffffff, NCFlag},
+        {0xfffffffffffffffd, NCFlag, 0xfffffffffffffffe, NCFlag},
+        {0x8000000000000000, NCFlag, 0x8000000000000001, NCFlag},
+        {0x7fffffffffffffff, CVFlag, 0x8000000000000000, NCFlag},
+        {0x7ffffffffffffffe, CFlag, 0x7fffffffffffffff, CFlag},
+        {0x7ffffffffffffffd, CFlag, 0x7ffffffffffffffe, CFlag},
+        {0x0000000000000000, ZCFlag, 0x0000000000000001, CFlag},
+        {0xffffffffffffffff, NFlag, 0x0000000000000000, ZCFlag}}};
 
   for (size_t left = 0; left < input_count; left++) {
     for (size_t right = 0; right < input_count; right++) {
-      const Expected & expected = expected_adcs_x[left][right];
-      AdcsSbcsHelper(&MacroAssembler::Adcs, inputs[left], inputs[right], 0,
-                     expected.carry0_result, expected.carry0_flags);
-      AdcsSbcsHelper(&MacroAssembler::Adcs, inputs[left], inputs[right], 1,
-                     expected.carry1_result, expected.carry1_flags);
+      const Expected& expected = expected_adcs_x[left][right];
+      AdcsSbcsHelper(&MacroAssembler::Adcs,
+                     inputs[left],
+                     inputs[right],
+                     0,
+                     expected.carry0_result,
+                     expected.carry0_flags);
+      AdcsSbcsHelper(&MacroAssembler::Adcs,
+                     inputs[left],
+                     inputs[right],
+                     1,
+                     expected.carry1_result,
+                     expected.carry1_flags);
     }
   }
 
   for (size_t left = 0; left < input_count; left++) {
     for (size_t right = 0; right < input_count; right++) {
-      const Expected & expected = expected_sbcs_x[left][right];
-      AdcsSbcsHelper(&MacroAssembler::Sbcs, inputs[left], inputs[right], 0,
-                     expected.carry0_result, expected.carry0_flags);
-      AdcsSbcsHelper(&MacroAssembler::Sbcs, inputs[left], inputs[right], 1,
-                     expected.carry1_result, expected.carry1_flags);
+      const Expected& expected = expected_sbcs_x[left][right];
+      AdcsSbcsHelper(&MacroAssembler::Sbcs,
+                     inputs[left],
+                     inputs[right],
+                     0,
+                     expected.carry0_result,
+                     expected.carry0_flags);
+      AdcsSbcsHelper(&MacroAssembler::Sbcs,
+                     inputs[left],
+                     inputs[right],
+                     1,
+                     expected.carry1_result,
+                     expected.carry1_flags);
     }
   }
 }
@@ -8158,8 +8337,14 @@ TEST(adcs_sbcs_x) {
 
 TEST(adcs_sbcs_w) {
   uint32_t inputs[] = {
-    0x00000000, 0x00000001, 0x7ffffffe, 0x7fffffff,
-    0x80000000, 0x80000001, 0xfffffffe, 0xffffffff,
+      0x00000000,
+      0x00000001,
+      0x7ffffffe,
+      0x7fffffff,
+      0x80000000,
+      0x80000001,
+      0xfffffffe,
+      0xffffffff,
   };
   static const size_t input_count = sizeof(inputs) / sizeof(inputs[0]);
 
@@ -8170,157 +8355,171 @@ TEST(adcs_sbcs_w) {
     StatusFlags carry1_flags;
   };
 
-  static const Expected expected_adcs_w[input_count][input_count] = {
-    {{0x00000000, ZFlag, 0x00000001, NoFlag},
-     {0x00000001, NoFlag, 0x00000002, NoFlag},
-     {0x7ffffffe, NoFlag, 0x7fffffff, NoFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0x80000000, NFlag, 0x80000001, NFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag}},
-    {{0x00000001, NoFlag, 0x00000002, NoFlag},
-     {0x00000002, NoFlag, 0x00000003, NoFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0x80000000, NVFlag, 0x80000001, NVFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag},
-     {0x80000002, NFlag, 0x80000003, NFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag}},
-    {{0x7ffffffe, NoFlag, 0x7fffffff, NoFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0xfffffffc, NVFlag, 0xfffffffd, NVFlag},
-     {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag}},
-    {{0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0x80000000, NVFlag, 0x80000001, NVFlag},
-     {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
-     {0xfffffffe, NVFlag, 0xffffffff, NVFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x7ffffffe, CFlag, 0x7fffffff, CFlag}},
-    {{0x80000000, NFlag, 0x80000001, NFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x00000000, ZCVFlag, 0x00000001, CVFlag},
-     {0x00000001, CVFlag, 0x00000002, CVFlag},
-     {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag}},
-    {{0x80000001, NFlag, 0x80000002, NFlag},
-     {0x80000002, NFlag, 0x80000003, NFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0x00000001, CVFlag, 0x00000002, CVFlag},
-     {0x00000002, CVFlag, 0x00000003, CVFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0x80000000, NCFlag, 0x80000001, NCFlag}},
-    {{0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0xfffffffc, NCFlag, 0xfffffffd, NCFlag},
-     {0xfffffffd, NCFlag, 0xfffffffe, NCFlag}},
-    {{0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x7ffffffe, CFlag, 0x7fffffff, CFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0x80000000, NCFlag, 0x80000001, NCFlag},
-     {0xfffffffd, NCFlag, 0xfffffffe, NCFlag},
-     {0xfffffffe, NCFlag, 0xffffffff, NCFlag}}
-  };
+  static const Expected expected_adcs_w[input_count][input_count] =
+      {{{0x00000000, ZFlag, 0x00000001, NoFlag},
+        {0x00000001, NoFlag, 0x00000002, NoFlag},
+        {0x7ffffffe, NoFlag, 0x7fffffff, NoFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0x80000000, NFlag, 0x80000001, NFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag}},
+       {{0x00000001, NoFlag, 0x00000002, NoFlag},
+        {0x00000002, NoFlag, 0x00000003, NoFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0x80000000, NVFlag, 0x80000001, NVFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag},
+        {0x80000002, NFlag, 0x80000003, NFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag}},
+       {{0x7ffffffe, NoFlag, 0x7fffffff, NoFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0xfffffffc, NVFlag, 0xfffffffd, NVFlag},
+        {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag}},
+       {{0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0x80000000, NVFlag, 0x80000001, NVFlag},
+        {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
+        {0xfffffffe, NVFlag, 0xffffffff, NVFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x7ffffffe, CFlag, 0x7fffffff, CFlag}},
+       {{0x80000000, NFlag, 0x80000001, NFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x00000000, ZCVFlag, 0x00000001, CVFlag},
+        {0x00000001, CVFlag, 0x00000002, CVFlag},
+        {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag}},
+       {{0x80000001, NFlag, 0x80000002, NFlag},
+        {0x80000002, NFlag, 0x80000003, NFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0x00000001, CVFlag, 0x00000002, CVFlag},
+        {0x00000002, CVFlag, 0x00000003, CVFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0x80000000, NCFlag, 0x80000001, NCFlag}},
+       {{0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0xfffffffc, NCFlag, 0xfffffffd, NCFlag},
+        {0xfffffffd, NCFlag, 0xfffffffe, NCFlag}},
+       {{0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x7ffffffe, CFlag, 0x7fffffff, CFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0x80000000, NCFlag, 0x80000001, NCFlag},
+        {0xfffffffd, NCFlag, 0xfffffffe, NCFlag},
+        {0xfffffffe, NCFlag, 0xffffffff, NCFlag}}};
 
-  static const Expected expected_sbcs_w[input_count][input_count] = {
-    {{0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag},
-     {0x80000000, NFlag, 0x80000001, NFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0x7ffffffe, NoFlag, 0x7fffffff, NoFlag},
-     {0x00000001, NoFlag, 0x00000002, NoFlag},
-     {0x00000000, ZFlag, 0x00000001, NoFlag}},
-    {{0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x80000002, NFlag, 0x80000003, NFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag},
-     {0x80000000, NVFlag, 0x80000001, NVFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0x00000002, NoFlag, 0x00000003, NoFlag},
-     {0x00000001, NoFlag, 0x00000002, NoFlag}},
-    {{0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
-     {0xfffffffc, NVFlag, 0xfffffffd, NVFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag},
-     {0x7ffffffe, NoFlag, 0x7fffffff, NoFlag}},
-    {{0x7ffffffe, CFlag, 0x7fffffff, CFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0xfffffffe, NVFlag, 0xffffffff, NVFlag},
-     {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
-     {0x80000000, NVFlag, 0x80000001, NVFlag},
-     {0x7fffffff, NoFlag, 0x80000000, NVFlag}},
-    {{0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
-     {0x00000001, CVFlag, 0x00000002, CVFlag},
-     {0x00000000, ZCVFlag, 0x00000001, CVFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag},
-     {0x80000000, NFlag, 0x80000001, NFlag}},
-    {{0x80000000, NCFlag, 0x80000001, NCFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0x00000002, CVFlag, 0x00000003, CVFlag},
-     {0x00000001, CVFlag, 0x00000002, CVFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0x80000002, NFlag, 0x80000003, NFlag},
-     {0x80000001, NFlag, 0x80000002, NFlag}},
-    {{0xfffffffd, NCFlag, 0xfffffffe, NCFlag},
-     {0xfffffffc, NCFlag, 0xfffffffd, NCFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag},
-     {0xfffffffe, NFlag, 0xffffffff, NFlag}},
-    {{0xfffffffe, NCFlag, 0xffffffff, NCFlag},
-     {0xfffffffd, NCFlag, 0xfffffffe, NCFlag},
-     {0x80000000, NCFlag, 0x80000001, NCFlag},
-     {0x7fffffff, CVFlag, 0x80000000, NCFlag},
-     {0x7ffffffe, CFlag, 0x7fffffff, CFlag},
-     {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
-     {0x00000000, ZCFlag, 0x00000001, CFlag},
-     {0xffffffff, NFlag, 0x00000000, ZCFlag}}
-  };
+  static const Expected expected_sbcs_w[input_count][input_count] =
+      {{{0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag},
+        {0x80000000, NFlag, 0x80000001, NFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0x7ffffffe, NoFlag, 0x7fffffff, NoFlag},
+        {0x00000001, NoFlag, 0x00000002, NoFlag},
+        {0x00000000, ZFlag, 0x00000001, NoFlag}},
+       {{0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x80000002, NFlag, 0x80000003, NFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag},
+        {0x80000000, NVFlag, 0x80000001, NVFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0x00000002, NoFlag, 0x00000003, NoFlag},
+        {0x00000001, NoFlag, 0x00000002, NoFlag}},
+       {{0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
+        {0xfffffffc, NVFlag, 0xfffffffd, NVFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag},
+        {0x7ffffffe, NoFlag, 0x7fffffff, NoFlag}},
+       {{0x7ffffffe, CFlag, 0x7fffffff, CFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0xfffffffe, NVFlag, 0xffffffff, NVFlag},
+        {0xfffffffd, NVFlag, 0xfffffffe, NVFlag},
+        {0x80000000, NVFlag, 0x80000001, NVFlag},
+        {0x7fffffff, NoFlag, 0x80000000, NVFlag}},
+       {{0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
+        {0x00000001, CVFlag, 0x00000002, CVFlag},
+        {0x00000000, ZCVFlag, 0x00000001, CVFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag},
+        {0x80000000, NFlag, 0x80000001, NFlag}},
+       {{0x80000000, NCFlag, 0x80000001, NCFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0x00000002, CVFlag, 0x00000003, CVFlag},
+        {0x00000001, CVFlag, 0x00000002, CVFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0x80000002, NFlag, 0x80000003, NFlag},
+        {0x80000001, NFlag, 0x80000002, NFlag}},
+       {{0xfffffffd, NCFlag, 0xfffffffe, NCFlag},
+        {0xfffffffc, NCFlag, 0xfffffffd, NCFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0x7ffffffe, CVFlag, 0x7fffffff, CVFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x7ffffffc, CFlag, 0x7ffffffd, CFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag},
+        {0xfffffffe, NFlag, 0xffffffff, NFlag}},
+       {{0xfffffffe, NCFlag, 0xffffffff, NCFlag},
+        {0xfffffffd, NCFlag, 0xfffffffe, NCFlag},
+        {0x80000000, NCFlag, 0x80000001, NCFlag},
+        {0x7fffffff, CVFlag, 0x80000000, NCFlag},
+        {0x7ffffffe, CFlag, 0x7fffffff, CFlag},
+        {0x7ffffffd, CFlag, 0x7ffffffe, CFlag},
+        {0x00000000, ZCFlag, 0x00000001, CFlag},
+        {0xffffffff, NFlag, 0x00000000, ZCFlag}}};
 
   for (size_t left = 0; left < input_count; left++) {
     for (size_t right = 0; right < input_count; right++) {
-      const Expected & expected = expected_adcs_w[left][right];
-      AdcsSbcsHelper(&MacroAssembler::Adcs, inputs[left], inputs[right], 0,
-                     expected.carry0_result, expected.carry0_flags);
-      AdcsSbcsHelper(&MacroAssembler::Adcs, inputs[left], inputs[right], 1,
-                     expected.carry1_result, expected.carry1_flags);
+      const Expected& expected = expected_adcs_w[left][right];
+      AdcsSbcsHelper(&MacroAssembler::Adcs,
+                     inputs[left],
+                     inputs[right],
+                     0,
+                     expected.carry0_result,
+                     expected.carry0_flags);
+      AdcsSbcsHelper(&MacroAssembler::Adcs,
+                     inputs[left],
+                     inputs[right],
+                     1,
+                     expected.carry1_result,
+                     expected.carry1_flags);
     }
   }
 
   for (size_t left = 0; left < input_count; left++) {
     for (size_t right = 0; right < input_count; right++) {
-      const Expected & expected = expected_sbcs_w[left][right];
-      AdcsSbcsHelper(&MacroAssembler::Sbcs, inputs[left], inputs[right], 0,
-                     expected.carry0_result, expected.carry0_flags);
-      AdcsSbcsHelper(&MacroAssembler::Sbcs, inputs[left], inputs[right], 1,
-                     expected.carry1_result, expected.carry1_flags);
+      const Expected& expected = expected_sbcs_w[left][right];
+      AdcsSbcsHelper(&MacroAssembler::Sbcs,
+                     inputs[left],
+                     inputs[right],
+                     0,
+                     expected.carry0_result,
+                     expected.carry0_flags);
+      AdcsSbcsHelper(&MacroAssembler::Sbcs,
+                     inputs[left],
+                     inputs[right],
+                     1,
+                     expected.carry1_result,
+                     expected.carry1_flags);
     }
   }
 }
@@ -8794,7 +8993,6 @@ TEST(cmp_extend) {
 
 TEST(ccmp) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(w16, 0);
@@ -8816,11 +9014,17 @@ TEST(ccmp) {
   __ Mrs(x3, NZCV);
 
   // The MacroAssembler does not allow al as a condition.
-  __ ccmp(x16, x16, NZCVFlag, al);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ ccmp(x16, x16, NZCVFlag, al);
+  }
   __ Mrs(x4, NZCV);
 
   // The MacroAssembler does not allow nv as a condition.
-  __ ccmp(x16, x16, NZCVFlag, nv);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ ccmp(x16, x16, NZCVFlag, nv);
+  }
   __ Mrs(x5, NZCV);
 
   END();
@@ -8907,7 +9111,6 @@ TEST(ccmp_shift_extend) {
 
 TEST(csel_reg) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(x16, 0);
@@ -8921,8 +9124,11 @@ TEST(csel_reg) {
   __ Csinc(w3, w24, w25, pl);
 
   // The MacroAssembler does not allow al or nv as a condition.
-  __ csel(w13, w24, w25, al);
-  __ csel(x14, x24, x25, nv);
+  {
+    ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+    __ csel(w13, w24, w25, al);
+    __ csel(x14, x24, x25, nv);
+  }
 
   __ Cmp(x16, Operand(1));
   __ Csinv(x4, x24, x25, gt);
@@ -8937,8 +9143,11 @@ TEST(csel_reg) {
   __ Cneg(x12, x24, ne);
 
   // The MacroAssembler does not allow al or nv as a condition.
-  __ csel(w15, w24, w25, al);
-  __ csel(x17, x24, x25, nv);
+  {
+    ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+    __ csel(w15, w24, w25, al);
+    __ csel(x17, x24, x25, nv);
+  }
 
   END();
 
@@ -9055,7 +9264,6 @@ TEST(csel_mixed) {
 
 TEST(lslv) {
   SETUP();
-  ALLOW_ASM();
 
   uint64_t value = 0x0123456789abcdef;
   int shift[] = {1, 3, 5, 9, 17, 33};
@@ -9070,7 +9278,10 @@ TEST(lslv) {
   __ Mov(w6, shift[5]);
 
   // The MacroAssembler does not allow zr as an argument.
-  __ lslv(x0, x0, xzr);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ lslv(x0, x0, xzr);
+  }
 
   __ Lsl(x16, x0, x1);
   __ Lsl(x17, x0, x2);
@@ -9109,7 +9320,6 @@ TEST(lslv) {
 
 TEST(lsrv) {
   SETUP();
-  ALLOW_ASM();
 
   uint64_t value = 0x0123456789abcdef;
   int shift[] = {1, 3, 5, 9, 17, 33};
@@ -9124,7 +9334,10 @@ TEST(lsrv) {
   __ Mov(w6, shift[5]);
 
   // The MacroAssembler does not allow zr as an argument.
-  __ lsrv(x0, x0, xzr);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ lsrv(x0, x0, xzr);
+  }
 
   __ Lsr(x16, x0, x1);
   __ Lsr(x17, x0, x2);
@@ -9165,7 +9378,6 @@ TEST(lsrv) {
 
 TEST(asrv) {
   SETUP();
-  ALLOW_ASM();
 
   int64_t value = 0xfedcba98fedcba98;
   int shift[] = {1, 3, 5, 9, 17, 33};
@@ -9180,7 +9392,10 @@ TEST(asrv) {
   __ Mov(w6, shift[5]);
 
   // The MacroAssembler does not allow zr as an argument.
-  __ asrv(x0, x0, xzr);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ asrv(x0, x0, xzr);
+  }
 
   __ Asr(x16, x0, x1);
   __ Asr(x17, x0, x2);
@@ -9221,7 +9436,6 @@ TEST(asrv) {
 
 TEST(rorv) {
   SETUP();
-  ALLOW_ASM();
 
   uint64_t value = 0x0123456789abcdef;
   int shift[] = {4, 8, 12, 16, 24, 36};
@@ -9236,7 +9450,10 @@ TEST(rorv) {
   __ Mov(w6, shift[5]);
 
   // The MacroAssembler does not allow zr as an argument.
-  __ rorv(x0, x0, xzr);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ rorv(x0, x0, xzr);
+  }
 
   __ Ror(x16, x0, x1);
   __ Ror(x17, x0, x2);
@@ -9275,7 +9492,6 @@ TEST(rorv) {
 
 TEST(bfm) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(x1, 0x0123456789abcdef);
@@ -9287,7 +9503,6 @@ TEST(bfm) {
   __ Mov(w20, 0x88888888);
   __ Mov(w21, 0x88888888);
 
-  // There are no macro instruction for bfm.
   __ Bfm(x10, x1, 16, 31);
   __ Bfm(x11, x1, 32, 15);
 
@@ -9317,13 +9532,11 @@ TEST(bfm) {
 
 TEST(sbfm) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(x1, 0x0123456789abcdef);
   __ Mov(x2, 0xfedcba9876543210);
 
-  // There are no macro instruction for sbfm.
   __ Sbfm(x10, x1, 16, 31);
   __ Sbfm(x11, x1, 32, 15);
   __ Sbfm(x12, x1, 32, 47);
@@ -9381,7 +9594,6 @@ TEST(sbfm) {
 
 TEST(ubfm) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(x1, 0x0123456789abcdef);
@@ -9390,7 +9602,6 @@ TEST(ubfm) {
   __ Mov(x10, 0x8888888888888888);
   __ Mov(x11, 0x8888888888888888);
 
-  // There are no macro instruction for ubfm.
   __ Ubfm(x10, x1, 16, 31);
   __ Ubfm(x11, x1, 32, 15);
   __ Ubfm(x12, x1, 32, 47);
@@ -9706,9 +9917,13 @@ TEST(fmul) {
 }
 
 
-static void FmaddFmsubHelper(double n, double m, double a,
-                             double fmadd, double fmsub,
-                             double fnmadd, double fnmsub) {
+static void FmaddFmsubHelper(double n,
+                             double m,
+                             double a,
+                             double fmadd,
+                             double fmsub,
+                             double fnmadd,
+                             double fnmsub) {
   SETUP();
   START();
 
@@ -9742,28 +9957,40 @@ TEST(fmadd_fmsub_double) {
 
   // Check the sign of exact zeroes.
   //               n     m     a     fmadd  fmsub  fnmadd fnmsub
-  FmaddFmsubHelper(-0.0, +0.0, -0.0, -0.0,  +0.0,  +0.0,  +0.0);
-  FmaddFmsubHelper(+0.0, +0.0, -0.0, +0.0,  -0.0,  +0.0,  +0.0);
-  FmaddFmsubHelper(+0.0, +0.0, +0.0, +0.0,  +0.0,  -0.0,  +0.0);
-  FmaddFmsubHelper(-0.0, +0.0, +0.0, +0.0,  +0.0,  +0.0,  -0.0);
-  FmaddFmsubHelper(+0.0, -0.0, -0.0, -0.0,  +0.0,  +0.0,  +0.0);
-  FmaddFmsubHelper(-0.0, -0.0, -0.0, +0.0,  -0.0,  +0.0,  +0.0);
-  FmaddFmsubHelper(-0.0, -0.0, +0.0, +0.0,  +0.0,  -0.0,  +0.0);
-  FmaddFmsubHelper(+0.0, -0.0, +0.0, +0.0,  +0.0,  +0.0,  -0.0);
+  FmaddFmsubHelper(-0.0, +0.0, -0.0, -0.0, +0.0, +0.0, +0.0);
+  FmaddFmsubHelper(+0.0, +0.0, -0.0, +0.0, -0.0, +0.0, +0.0);
+  FmaddFmsubHelper(+0.0, +0.0, +0.0, +0.0, +0.0, -0.0, +0.0);
+  FmaddFmsubHelper(-0.0, +0.0, +0.0, +0.0, +0.0, +0.0, -0.0);
+  FmaddFmsubHelper(+0.0, -0.0, -0.0, -0.0, +0.0, +0.0, +0.0);
+  FmaddFmsubHelper(-0.0, -0.0, -0.0, +0.0, -0.0, +0.0, +0.0);
+  FmaddFmsubHelper(-0.0, -0.0, +0.0, +0.0, +0.0, -0.0, +0.0);
+  FmaddFmsubHelper(+0.0, -0.0, +0.0, +0.0, +0.0, +0.0, -0.0);
 
   // Check NaN generation.
-  FmaddFmsubHelper(kFP64PositiveInfinity, 0.0, 42.0,
-                   kFP64DefaultNaN, kFP64DefaultNaN,
-                   kFP64DefaultNaN, kFP64DefaultNaN);
-  FmaddFmsubHelper(0.0, kFP64PositiveInfinity, 42.0,
-                   kFP64DefaultNaN, kFP64DefaultNaN,
-                   kFP64DefaultNaN, kFP64DefaultNaN);
-  FmaddFmsubHelper(kFP64PositiveInfinity, 1.0, kFP64PositiveInfinity,
-                   kFP64PositiveInfinity,   //  inf + ( inf * 1) = inf
-                   kFP64DefaultNaN,         //  inf + (-inf * 1) = NaN
-                   kFP64NegativeInfinity,   // -inf + (-inf * 1) = -inf
-                   kFP64DefaultNaN);        // -inf + ( inf * 1) = NaN
-  FmaddFmsubHelper(kFP64NegativeInfinity, 1.0, kFP64PositiveInfinity,
+  FmaddFmsubHelper(kFP64PositiveInfinity,
+                   0.0,
+                   42.0,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN);
+  FmaddFmsubHelper(0.0,
+                   kFP64PositiveInfinity,
+                   42.0,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN);
+  FmaddFmsubHelper(kFP64PositiveInfinity,
+                   1.0,
+                   kFP64PositiveInfinity,
+                   kFP64PositiveInfinity,  //  inf + ( inf * 1) = inf
+                   kFP64DefaultNaN,        //  inf + (-inf * 1) = NaN
+                   kFP64NegativeInfinity,  // -inf + (-inf * 1) = -inf
+                   kFP64DefaultNaN);       // -inf + ( inf * 1) = NaN
+  FmaddFmsubHelper(kFP64NegativeInfinity,
+                   1.0,
+                   kFP64PositiveInfinity,
                    kFP64DefaultNaN,         //  inf + (-inf * 1) = NaN
                    kFP64PositiveInfinity,   //  inf + ( inf * 1) = inf
                    kFP64DefaultNaN,         // -inf + ( inf * 1) = NaN
@@ -9771,9 +9998,13 @@ TEST(fmadd_fmsub_double) {
 }
 
 
-static void FmaddFmsubHelper(float n, float m, float a,
-                             float fmadd, float fmsub,
-                             float fnmadd, float fnmsub) {
+static void FmaddFmsubHelper(float n,
+                             float m,
+                             float a,
+                             float fmadd,
+                             float fmsub,
+                             float fnmadd,
+                             float fnmsub) {
   SETUP();
   START();
 
@@ -9817,18 +10048,30 @@ TEST(fmadd_fmsub_float) {
   FmaddFmsubHelper(+0.0f, -0.0f, +0.0f, +0.0f, +0.0f, +0.0f, -0.0f);
 
   // Check NaN generation.
-  FmaddFmsubHelper(kFP32PositiveInfinity, 0.0f, 42.0f,
-                   kFP32DefaultNaN, kFP32DefaultNaN,
-                   kFP32DefaultNaN, kFP32DefaultNaN);
-  FmaddFmsubHelper(0.0f, kFP32PositiveInfinity, 42.0f,
-                   kFP32DefaultNaN, kFP32DefaultNaN,
-                   kFP32DefaultNaN, kFP32DefaultNaN);
-  FmaddFmsubHelper(kFP32PositiveInfinity, 1.0f, kFP32PositiveInfinity,
-                   kFP32PositiveInfinity,   //  inf + ( inf * 1) = inf
-                   kFP32DefaultNaN,         //  inf + (-inf * 1) = NaN
-                   kFP32NegativeInfinity,   // -inf + (-inf * 1) = -inf
-                   kFP32DefaultNaN);        // -inf + ( inf * 1) = NaN
-  FmaddFmsubHelper(kFP32NegativeInfinity, 1.0f, kFP32PositiveInfinity,
+  FmaddFmsubHelper(kFP32PositiveInfinity,
+                   0.0f,
+                   42.0f,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN);
+  FmaddFmsubHelper(0.0f,
+                   kFP32PositiveInfinity,
+                   42.0f,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN);
+  FmaddFmsubHelper(kFP32PositiveInfinity,
+                   1.0f,
+                   kFP32PositiveInfinity,
+                   kFP32PositiveInfinity,  //  inf + ( inf * 1) = inf
+                   kFP32DefaultNaN,        //  inf + (-inf * 1) = NaN
+                   kFP32NegativeInfinity,  // -inf + (-inf * 1) = -inf
+                   kFP32DefaultNaN);       // -inf + ( inf * 1) = NaN
+  FmaddFmsubHelper(kFP32NegativeInfinity,
+                   1.0f,
+                   kFP32PositiveInfinity,
                    kFP32DefaultNaN,         //  inf + (-inf * 1) = NaN
                    kFP32PositiveInfinity,   //  inf + ( inf * 1) = inf
                    kFP32DefaultNaN,         // -inf + ( inf * 1) = NaN
@@ -9903,18 +10146,34 @@ TEST(fmadd_fmsub_double_nans) {
   FmaddFmsubHelper(s1, s2, sa, sa_proc, sa_proc, sa_proc_neg, sa_proc_neg);
 
   // A NaN generated by the intermediate op1 * op2 overrides a quiet NaN in a.
-  FmaddFmsubHelper(0, kFP64PositiveInfinity, qa,
-                   kFP64DefaultNaN, kFP64DefaultNaN,
-                   kFP64DefaultNaN, kFP64DefaultNaN);
-  FmaddFmsubHelper(kFP64PositiveInfinity, 0, qa,
-                   kFP64DefaultNaN, kFP64DefaultNaN,
-                   kFP64DefaultNaN, kFP64DefaultNaN);
-  FmaddFmsubHelper(0, kFP64NegativeInfinity, qa,
-                   kFP64DefaultNaN, kFP64DefaultNaN,
-                   kFP64DefaultNaN, kFP64DefaultNaN);
-  FmaddFmsubHelper(kFP64NegativeInfinity, 0, qa,
-                   kFP64DefaultNaN, kFP64DefaultNaN,
-                   kFP64DefaultNaN, kFP64DefaultNaN);
+  FmaddFmsubHelper(0,
+                   kFP64PositiveInfinity,
+                   qa,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN);
+  FmaddFmsubHelper(kFP64PositiveInfinity,
+                   0,
+                   qa,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN);
+  FmaddFmsubHelper(0,
+                   kFP64NegativeInfinity,
+                   qa,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN);
+  FmaddFmsubHelper(kFP64NegativeInfinity,
+                   0,
+                   qa,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN,
+                   kFP64DefaultNaN);
 }
 
 
@@ -9985,18 +10244,34 @@ TEST(fmadd_fmsub_float_nans) {
   FmaddFmsubHelper(s1, s2, sa, sa_proc, sa_proc, sa_proc_neg, sa_proc_neg);
 
   // A NaN generated by the intermediate op1 * op2 overrides a quiet NaN in a.
-  FmaddFmsubHelper(0, kFP32PositiveInfinity, qa,
-                   kFP32DefaultNaN, kFP32DefaultNaN,
-                   kFP32DefaultNaN, kFP32DefaultNaN);
-  FmaddFmsubHelper(kFP32PositiveInfinity, 0, qa,
-                   kFP32DefaultNaN, kFP32DefaultNaN,
-                   kFP32DefaultNaN, kFP32DefaultNaN);
-  FmaddFmsubHelper(0, kFP32NegativeInfinity, qa,
-                   kFP32DefaultNaN, kFP32DefaultNaN,
-                   kFP32DefaultNaN, kFP32DefaultNaN);
-  FmaddFmsubHelper(kFP32NegativeInfinity, 0, qa,
-                   kFP32DefaultNaN, kFP32DefaultNaN,
-                   kFP32DefaultNaN, kFP32DefaultNaN);
+  FmaddFmsubHelper(0,
+                   kFP32PositiveInfinity,
+                   qa,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN);
+  FmaddFmsubHelper(kFP32PositiveInfinity,
+                   0,
+                   qa,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN);
+  FmaddFmsubHelper(0,
+                   kFP32NegativeInfinity,
+                   qa,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN);
+  FmaddFmsubHelper(kFP32NegativeInfinity,
+                   0,
+                   qa,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN,
+                   kFP32DefaultNaN);
 }
 
 
@@ -10090,8 +10365,7 @@ static float MinMaxHelper(float n,
     }
   }
 
-  if ((n == 0.0) && (m == 0.0) &&
-      (copysign(1.0, n) != copysign(1.0, m))) {
+  if ((n == 0.0) && (m == 0.0) && (copysign(1.0, n) != copysign(1.0, m))) {
     return min ? -0.0 : 0.0;
   }
 
@@ -10132,8 +10406,7 @@ static double MinMaxHelper(double n,
     }
   }
 
-  if ((n == 0.0) && (m == 0.0) &&
-      (copysign(1.0, n) != copysign(1.0, m))) {
+  if ((n == 0.0) && (m == 0.0) && (copysign(1.0, n) != copysign(1.0, m))) {
     return min ? -0.0 : 0.0;
   }
 
@@ -10141,8 +10414,8 @@ static double MinMaxHelper(double n,
 }
 
 
-static void FminFmaxDoubleHelper(double n, double m, double min, double max,
-                                 double minnm, double maxnm) {
+static void FminFmaxDoubleHelper(
+    double n, double m, double min, double max, double minnm, double maxnm) {
   SETUP();
 
   START();
@@ -10181,33 +10454,52 @@ TEST(fmax_fmin_d) {
   // Bootstrap tests.
   FminFmaxDoubleHelper(0, 0, 0, 0, 0, 0);
   FminFmaxDoubleHelper(0, 1, 0, 1, 0, 1);
-  FminFmaxDoubleHelper(kFP64PositiveInfinity, kFP64NegativeInfinity,
-                       kFP64NegativeInfinity, kFP64PositiveInfinity,
-                       kFP64NegativeInfinity, kFP64PositiveInfinity);
-  FminFmaxDoubleHelper(snan, 0,
-                       snan_processed, snan_processed,
-                       snan_processed, snan_processed);
-  FminFmaxDoubleHelper(0, snan,
-                       snan_processed, snan_processed,
-                       snan_processed, snan_processed);
-  FminFmaxDoubleHelper(qnan, 0,
-                       qnan_processed, qnan_processed,
-                       0, 0);
-  FminFmaxDoubleHelper(0, qnan,
-                       qnan_processed, qnan_processed,
-                       0, 0);
-  FminFmaxDoubleHelper(qnan, snan,
-                       snan_processed, snan_processed,
-                       snan_processed, snan_processed);
-  FminFmaxDoubleHelper(snan, qnan,
-                       snan_processed, snan_processed,
-                       snan_processed, snan_processed);
+  FminFmaxDoubleHelper(kFP64PositiveInfinity,
+                       kFP64NegativeInfinity,
+                       kFP64NegativeInfinity,
+                       kFP64PositiveInfinity,
+                       kFP64NegativeInfinity,
+                       kFP64PositiveInfinity);
+  FminFmaxDoubleHelper(snan,
+                       0,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed);
+  FminFmaxDoubleHelper(0,
+                       snan,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed);
+  FminFmaxDoubleHelper(qnan, 0, qnan_processed, qnan_processed, 0, 0);
+  FminFmaxDoubleHelper(0, qnan, qnan_processed, qnan_processed, 0, 0);
+  FminFmaxDoubleHelper(qnan,
+                       snan,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed);
+  FminFmaxDoubleHelper(snan,
+                       qnan,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed,
+                       snan_processed);
 
   // Iterate over all combinations of inputs.
-  double inputs[] = { DBL_MAX, DBL_MIN, 1.0, 0.0,
-                      -DBL_MAX, -DBL_MIN, -1.0, -0.0,
-                      kFP64PositiveInfinity, kFP64NegativeInfinity,
-                      kFP64QuietNaN, kFP64SignallingNaN };
+  double inputs[] = {DBL_MAX,
+                     DBL_MIN,
+                     1.0,
+                     0.0,
+                     -DBL_MAX,
+                     -DBL_MIN,
+                     -1.0,
+                     -0.0,
+                     kFP64PositiveInfinity,
+                     kFP64NegativeInfinity,
+                     kFP64QuietNaN,
+                     kFP64SignallingNaN};
 
   const int count = sizeof(inputs) / sizeof(inputs[0]);
 
@@ -10215,7 +10507,8 @@ TEST(fmax_fmin_d) {
     double n = inputs[in];
     for (int im = 0; im < count; im++) {
       double m = inputs[im];
-      FminFmaxDoubleHelper(n, m,
+      FminFmaxDoubleHelper(n,
+                           m,
                            MinMaxHelper(n, m, true),
                            MinMaxHelper(n, m, false),
                            MinMaxHelper(n, m, true, kFP64PositiveInfinity),
@@ -10225,8 +10518,8 @@ TEST(fmax_fmin_d) {
 }
 
 
-static void FminFmaxFloatHelper(float n, float m, float min, float max,
-                                float minnm, float maxnm) {
+static void FminFmaxFloatHelper(
+    float n, float m, float min, float max, float minnm, float maxnm) {
   SETUP();
 
   START();
@@ -10265,33 +10558,52 @@ TEST(fmax_fmin_s) {
   // Bootstrap tests.
   FminFmaxFloatHelper(0, 0, 0, 0, 0, 0);
   FminFmaxFloatHelper(0, 1, 0, 1, 0, 1);
-  FminFmaxFloatHelper(kFP32PositiveInfinity, kFP32NegativeInfinity,
-                      kFP32NegativeInfinity, kFP32PositiveInfinity,
-                      kFP32NegativeInfinity, kFP32PositiveInfinity);
-  FminFmaxFloatHelper(snan, 0,
-                      snan_processed, snan_processed,
-                      snan_processed, snan_processed);
-  FminFmaxFloatHelper(0, snan,
-                      snan_processed, snan_processed,
-                      snan_processed, snan_processed);
-  FminFmaxFloatHelper(qnan, 0,
-                      qnan_processed, qnan_processed,
-                      0, 0);
-  FminFmaxFloatHelper(0, qnan,
-                      qnan_processed, qnan_processed,
-                      0, 0);
-  FminFmaxFloatHelper(qnan, snan,
-                      snan_processed, snan_processed,
-                      snan_processed, snan_processed);
-  FminFmaxFloatHelper(snan, qnan,
-                      snan_processed, snan_processed,
-                      snan_processed, snan_processed);
+  FminFmaxFloatHelper(kFP32PositiveInfinity,
+                      kFP32NegativeInfinity,
+                      kFP32NegativeInfinity,
+                      kFP32PositiveInfinity,
+                      kFP32NegativeInfinity,
+                      kFP32PositiveInfinity);
+  FminFmaxFloatHelper(snan,
+                      0,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed);
+  FminFmaxFloatHelper(0,
+                      snan,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed);
+  FminFmaxFloatHelper(qnan, 0, qnan_processed, qnan_processed, 0, 0);
+  FminFmaxFloatHelper(0, qnan, qnan_processed, qnan_processed, 0, 0);
+  FminFmaxFloatHelper(qnan,
+                      snan,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed);
+  FminFmaxFloatHelper(snan,
+                      qnan,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed,
+                      snan_processed);
 
   // Iterate over all combinations of inputs.
-  float inputs[] = { FLT_MAX, FLT_MIN, 1.0, 0.0,
-                     -FLT_MAX, -FLT_MIN, -1.0, -0.0,
-                     kFP32PositiveInfinity, kFP32NegativeInfinity,
-                     kFP32QuietNaN, kFP32SignallingNaN };
+  float inputs[] = {FLT_MAX,
+                    FLT_MIN,
+                    1.0,
+                    0.0,
+                    -FLT_MAX,
+                    -FLT_MIN,
+                    -1.0,
+                    -0.0,
+                    kFP32PositiveInfinity,
+                    kFP32NegativeInfinity,
+                    kFP32QuietNaN,
+                    kFP32SignallingNaN};
 
   const int count = sizeof(inputs) / sizeof(inputs[0]);
 
@@ -10299,7 +10611,8 @@ TEST(fmax_fmin_s) {
     float n = inputs[in];
     for (int im = 0; im < count; im++) {
       float m = inputs[im];
-      FminFmaxFloatHelper(n, m,
+      FminFmaxFloatHelper(n,
+                          m,
                           MinMaxHelper(n, m, true),
                           MinMaxHelper(n, m, false),
                           MinMaxHelper(n, m, true, kFP32PositiveInfinity),
@@ -10311,7 +10624,6 @@ TEST(fmax_fmin_s) {
 
 TEST(fccmp) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Fmov(s16, 0.0);
@@ -10357,10 +10669,16 @@ TEST(fccmp) {
   __ Mrs(x7, NZCV);
 
   // The Macro Assembler does not allow al or nv as condition.
-  __ fccmp(s16, s16, NFlag, al);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ fccmp(s16, s16, NFlag, al);
+  }
   __ Mrs(x8, NZCV);
 
-  __ fccmp(d18, d18, NFlag, nv);
+  {
+    ExactAssemblyScope scope(&masm, kInstructionSize);
+    __ fccmp(d18, d18, NFlag, nv);
+  }
   __ Mrs(x9, NZCV);
 
   __ Cmp(x20, 0);
@@ -10502,7 +10820,6 @@ TEST(fcmp) {
 
 TEST(fcsel) {
   SETUP();
-  ALLOW_ASM();
 
   START();
   __ Mov(x16, 0);
@@ -10517,8 +10834,11 @@ TEST(fcsel) {
   __ Fcsel(d2, d18, d19, eq);
   __ Fcsel(d3, d18, d19, ne);
   // The Macro Assembler does not allow al or nv as condition.
-  __ fcsel(s4, s16, s17, al);
-  __ fcsel(d5, d18, d19, nv);
+  {
+    ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+    __ fcsel(s4, s16, s17, al);
+    __ fcsel(d5, d18, d19, nv);
+  }
   END();
 
   RUN();
@@ -11301,8 +11621,8 @@ TEST(fcvt_ds) {
   __ Fmov(s26, -0.0);
   __ Fmov(s27, FLT_MAX);
   __ Fmov(s28, FLT_MIN);
-  __ Fmov(s29, RawbitsToFloat(0x7fc12345));   // Quiet NaN.
-  __ Fmov(s30, RawbitsToFloat(0x7f812345));   // Signalling NaN.
+  __ Fmov(s29, RawbitsToFloat(0x7fc12345));  // Quiet NaN.
+  __ Fmov(s30, RawbitsToFloat(0x7f812345));  // Signalling NaN.
 
   __ Fcvt(d0, s16);
   __ Fcvt(d1, s17);
@@ -11370,8 +11690,8 @@ TEST(fcvt_sd) {
   __ Fmov(d26, -0.0);
   __ Fmov(d27, FLT_MAX);
   __ Fmov(d28, FLT_MIN);
-  __ Fmov(d29, RawbitsToDouble(0x7ff82468a0000000));   // Quiet NaN.
-  __ Fmov(d30, RawbitsToDouble(0x7ff02468a0000000));   // Signalling NaN.
+  __ Fmov(d29, RawbitsToDouble(0x7ff82468a0000000));  // Quiet NaN.
+  __ Fmov(d30, RawbitsToDouble(0x7ff02468a0000000));  // Signalling NaN.
 
   __ Fcvt(s0, d16);
   __ Fcvt(s1, d17);
@@ -11548,15 +11868,15 @@ TEST(fcvtas) {
   __ Fmov(s19, -2.5);
   __ Fmov(s20, kFP32PositiveInfinity);
   __ Fmov(s21, kFP32NegativeInfinity);
-  __ Fmov(s22, 0x7fffff8000000000);     // Largest float < INT64_MAX.
-  __ Fneg(s23, s22);                    // Smallest float > INT64_MIN.
+  __ Fmov(s22, 0x7fffff8000000000);  // Largest float < INT64_MAX.
+  __ Fneg(s23, s22);                 // Smallest float > INT64_MIN.
   __ Fmov(d24, 1.1);
   __ Fmov(d25, 2.5);
   __ Fmov(d26, -2.5);
   __ Fmov(d27, kFP64PositiveInfinity);
   __ Fmov(d28, kFP64NegativeInfinity);
-  __ Fmov(d29, 0x7ffffffffffffc00);     // Largest double < INT64_MAX.
-  __ Fneg(d30, d29);                    // Smallest double > INT64_MIN.
+  __ Fmov(d29, 0x7ffffffffffffc00);  // Largest double < INT64_MAX.
+  __ Fneg(d30, d29);                 // Smallest double > INT64_MIN.
 
   __ Fcvtas(w0, s0);
   __ Fcvtas(w1, s1);
@@ -11736,8 +12056,8 @@ TEST(fcvtms) {
   __ Fmov(s3, -1.5);
   __ Fmov(s4, kFP32PositiveInfinity);
   __ Fmov(s5, kFP32NegativeInfinity);
-  __ Fmov(s6, 0x7fffff80);                    // Largest float < INT32_MAX.
-  __ Fneg(s7, s6);                            // Smallest float > INT32_MIN.
+  __ Fmov(s6, 0x7fffff80);  // Largest float < INT32_MAX.
+  __ Fneg(s7, s6);          // Smallest float > INT32_MIN.
   __ Fmov(d8, 1.0);
   __ Fmov(d9, 1.1);
   __ Fmov(d10, 1.5);
@@ -11751,15 +12071,15 @@ TEST(fcvtms) {
   __ Fmov(s19, -1.5);
   __ Fmov(s20, kFP32PositiveInfinity);
   __ Fmov(s21, kFP32NegativeInfinity);
-  __ Fmov(s22, 0x7fffff8000000000);           // Largest float < INT64_MAX.
-  __ Fneg(s23, s22);                          // Smallest float > INT64_MIN.
+  __ Fmov(s22, 0x7fffff8000000000);  // Largest float < INT64_MAX.
+  __ Fneg(s23, s22);                 // Smallest float > INT64_MIN.
   __ Fmov(d24, 1.1);
   __ Fmov(d25, 1.5);
   __ Fmov(d26, -1.5);
   __ Fmov(d27, kFP64PositiveInfinity);
   __ Fmov(d28, kFP64NegativeInfinity);
-  __ Fmov(d29, 0x7ffffffffffffc00);           // Largest double < INT64_MAX.
-  __ Fneg(d30, d29);                          // Smallest double > INT64_MIN.
+  __ Fmov(d29, 0x7ffffffffffffc00);  // Largest double < INT64_MAX.
+  __ Fneg(d30, d29);                 // Smallest double > INT64_MIN.
 
   __ Fcvtms(w0, s0);
   __ Fcvtms(w1, s1);
@@ -11840,8 +12160,8 @@ TEST(fcvtmu) {
   __ Fmov(s3, -1.5);
   __ Fmov(s4, kFP32PositiveInfinity);
   __ Fmov(s5, kFP32NegativeInfinity);
-  __ Fmov(s6, 0x7fffff80);                    // Largest float < INT32_MAX.
-  __ Fneg(s7, s6);                            // Smallest float > INT32_MIN.
+  __ Fmov(s6, 0x7fffff80);  // Largest float < INT32_MAX.
+  __ Fneg(s7, s6);          // Smallest float > INT32_MIN.
   __ Fmov(d8, 1.0);
   __ Fmov(d9, 1.1);
   __ Fmov(d10, 1.5);
@@ -11855,15 +12175,15 @@ TEST(fcvtmu) {
   __ Fmov(s19, -1.5);
   __ Fmov(s20, kFP32PositiveInfinity);
   __ Fmov(s21, kFP32NegativeInfinity);
-  __ Fmov(s22, 0x7fffff8000000000);           // Largest float < INT64_MAX.
-  __ Fneg(s23, s22);                          // Smallest float > INT64_MIN.
+  __ Fmov(s22, 0x7fffff8000000000);  // Largest float < INT64_MAX.
+  __ Fneg(s23, s22);                 // Smallest float > INT64_MIN.
   __ Fmov(d24, 1.1);
   __ Fmov(d25, 1.5);
   __ Fmov(d26, -1.5);
   __ Fmov(d27, kFP64PositiveInfinity);
   __ Fmov(d28, kFP64NegativeInfinity);
-  __ Fmov(d29, 0x7ffffffffffffc00);           // Largest double < INT64_MAX.
-  __ Fneg(d30, d29);                          // Smallest double > INT64_MIN.
+  __ Fmov(d29, 0x7ffffffffffffc00);  // Largest double < INT64_MAX.
+  __ Fneg(d30, d29);                 // Smallest double > INT64_MIN.
 
   __ Fcvtmu(w0, s0);
   __ Fcvtmu(w1, s1);
@@ -11942,8 +12262,8 @@ TEST(fcvtns) {
   __ Fmov(s3, -1.5);
   __ Fmov(s4, kFP32PositiveInfinity);
   __ Fmov(s5, kFP32NegativeInfinity);
-  __ Fmov(s6, 0x7fffff80);                    // Largest float < INT32_MAX.
-  __ Fneg(s7, s6);                            // Smallest float > INT32_MIN.
+  __ Fmov(s6, 0x7fffff80);  // Largest float < INT32_MAX.
+  __ Fneg(s7, s6);          // Smallest float > INT32_MIN.
   __ Fmov(d8, 1.0);
   __ Fmov(d9, 1.1);
   __ Fmov(d10, 1.5);
@@ -11957,15 +12277,15 @@ TEST(fcvtns) {
   __ Fmov(s19, -1.5);
   __ Fmov(s20, kFP32PositiveInfinity);
   __ Fmov(s21, kFP32NegativeInfinity);
-  __ Fmov(s22, 0x7fffff8000000000);           // Largest float < INT64_MAX.
-  __ Fneg(s23, s22);                          // Smallest float > INT64_MIN.
+  __ Fmov(s22, 0x7fffff8000000000);  // Largest float < INT64_MAX.
+  __ Fneg(s23, s22);                 // Smallest float > INT64_MIN.
   __ Fmov(d24, 1.1);
   __ Fmov(d25, 1.5);
   __ Fmov(d26, -1.5);
   __ Fmov(d27, kFP64PositiveInfinity);
   __ Fmov(d28, kFP64NegativeInfinity);
-  __ Fmov(d29, 0x7ffffffffffffc00);           // Largest double < INT64_MAX.
-  __ Fneg(d30, d29);                          // Smallest double > INT64_MIN.
+  __ Fmov(d29, 0x7ffffffffffffc00);  // Largest double < INT64_MAX.
+  __ Fneg(d30, d29);                 // Smallest double > INT64_MIN.
 
   __ Fcvtns(w0, s0);
   __ Fcvtns(w1, s1);
@@ -12145,8 +12465,8 @@ TEST(fcvtzs) {
   __ Fmov(s3, -1.5);
   __ Fmov(s4, kFP32PositiveInfinity);
   __ Fmov(s5, kFP32NegativeInfinity);
-  __ Fmov(s6, 0x7fffff80);                    // Largest float < INT32_MAX.
-  __ Fneg(s7, s6);                            // Smallest float > INT32_MIN.
+  __ Fmov(s6, 0x7fffff80);  // Largest float < INT32_MAX.
+  __ Fneg(s7, s6);          // Smallest float > INT32_MIN.
   __ Fmov(d8, 1.0);
   __ Fmov(d9, 1.1);
   __ Fmov(d10, 1.5);
@@ -12160,15 +12480,15 @@ TEST(fcvtzs) {
   __ Fmov(s19, -1.5);
   __ Fmov(s20, kFP32PositiveInfinity);
   __ Fmov(s21, kFP32NegativeInfinity);
-  __ Fmov(s22, 0x7fffff8000000000);           // Largest float < INT64_MAX.
-  __ Fneg(s23, s22);                          // Smallest float > INT64_MIN.
+  __ Fmov(s22, 0x7fffff8000000000);  // Largest float < INT64_MAX.
+  __ Fneg(s23, s22);                 // Smallest float > INT64_MIN.
   __ Fmov(d24, 1.1);
   __ Fmov(d25, 1.5);
   __ Fmov(d26, -1.5);
   __ Fmov(d27, kFP64PositiveInfinity);
   __ Fmov(d28, kFP64NegativeInfinity);
-  __ Fmov(d29, 0x7ffffffffffffc00);           // Largest double < INT64_MAX.
-  __ Fneg(d30, d29);                          // Smallest double > INT64_MIN.
+  __ Fmov(d29, 0x7ffffffffffffc00);  // Largest double < INT64_MAX.
+  __ Fneg(d30, d29);                 // Smallest double > INT64_MIN.
 
   __ Fcvtzs(w0, s0);
   __ Fcvtzs(w1, s1);
@@ -12248,8 +12568,8 @@ TEST(fcvtzu) {
   __ Fmov(s3, -1.5);
   __ Fmov(s4, kFP32PositiveInfinity);
   __ Fmov(s5, kFP32NegativeInfinity);
-  __ Fmov(s6, 0x7fffff80);                    // Largest float < INT32_MAX.
-  __ Fneg(s7, s6);                            // Smallest float > INT32_MIN.
+  __ Fmov(s6, 0x7fffff80);  // Largest float < INT32_MAX.
+  __ Fneg(s7, s6);          // Smallest float > INT32_MIN.
   __ Fmov(d8, 1.0);
   __ Fmov(d9, 1.1);
   __ Fmov(d10, 1.5);
@@ -12263,15 +12583,15 @@ TEST(fcvtzu) {
   __ Fmov(s19, -1.5);
   __ Fmov(s20, kFP32PositiveInfinity);
   __ Fmov(s21, kFP32NegativeInfinity);
-  __ Fmov(s22, 0x7fffff8000000000);           // Largest float < INT64_MAX.
-  __ Fneg(s23, s22);                          // Smallest float > INT64_MIN.
+  __ Fmov(s22, 0x7fffff8000000000);  // Largest float < INT64_MAX.
+  __ Fneg(s23, s22);                 // Smallest float > INT64_MIN.
   __ Fmov(d24, 1.1);
   __ Fmov(d25, 1.5);
   __ Fmov(d26, -1.5);
   __ Fmov(d27, kFP64PositiveInfinity);
   __ Fmov(d28, kFP64NegativeInfinity);
-  __ Fmov(d29, 0x7ffffffffffffc00);           // Largest double < INT64_MAX.
-  __ Fneg(d30, d29);                          // Smallest double > INT64_MIN.
+  __ Fmov(d29, 0x7ffffffffffffc00);  // Largest double < INT64_MAX.
+  __ Fneg(d30, d29);                 // Smallest double > INT64_MIN.
 
   __ Fcvtzu(w0, s0);
   __ Fcvtzu(w1, s1);
@@ -12903,7 +13223,6 @@ TEST(system_nop) {
 
 TEST(zero_dest) {
   SETUP();
-  ALLOW_ASM();
   RegisterDump before;
 
   START();
@@ -12914,39 +13233,42 @@ TEST(zero_dest) {
   __ Mov(x0, 0);
   __ Mov(x1, literal_base);
   for (unsigned i = 2; i < x30.GetCode(); i++) {
-    __ Add(Register::GetXRegFromCode(i), Register::GetXRegFromCode(i-1), x1);
+    __ Add(Register::GetXRegFromCode(i), Register::GetXRegFromCode(i - 1), x1);
   }
   before.Dump(&masm);
 
   // All of these instructions should be NOPs in these forms, but have
   // alternate forms which can write into the stack pointer.
-  __ add(xzr, x0, x1);
-  __ add(xzr, x1, xzr);
-  __ add(xzr, xzr, x1);
+  {
+    ExactAssemblyScope scope(&masm, 3 * 7 * kInstructionSize);
+    __ add(xzr, x0, x1);
+    __ add(xzr, x1, xzr);
+    __ add(xzr, xzr, x1);
 
-  __ and_(xzr, x0, x2);
-  __ and_(xzr, x2, xzr);
-  __ and_(xzr, xzr, x2);
+    __ and_(xzr, x0, x2);
+    __ and_(xzr, x2, xzr);
+    __ and_(xzr, xzr, x2);
 
-  __ bic(xzr, x0, x3);
-  __ bic(xzr, x3, xzr);
-  __ bic(xzr, xzr, x3);
+    __ bic(xzr, x0, x3);
+    __ bic(xzr, x3, xzr);
+    __ bic(xzr, xzr, x3);
 
-  __ eon(xzr, x0, x4);
-  __ eon(xzr, x4, xzr);
-  __ eon(xzr, xzr, x4);
+    __ eon(xzr, x0, x4);
+    __ eon(xzr, x4, xzr);
+    __ eon(xzr, xzr, x4);
 
-  __ eor(xzr, x0, x5);
-  __ eor(xzr, x5, xzr);
-  __ eor(xzr, xzr, x5);
+    __ eor(xzr, x0, x5);
+    __ eor(xzr, x5, xzr);
+    __ eor(xzr, xzr, x5);
 
-  __ orr(xzr, x0, x6);
-  __ orr(xzr, x6, xzr);
-  __ orr(xzr, xzr, x6);
+    __ orr(xzr, x0, x6);
+    __ orr(xzr, x6, xzr);
+    __ orr(xzr, xzr, x6);
 
-  __ sub(xzr, x0, x7);
-  __ sub(xzr, x7, xzr);
-  __ sub(xzr, xzr, x7);
+    __ sub(xzr, x0, x7);
+    __ sub(xzr, x7, xzr);
+    __ sub(xzr, xzr, x7);
+  }
 
   // Swap the saved stack pointer with the real one. If sp was written
   // during the test, it will show up in x30. This is done because the test
@@ -12970,7 +13292,6 @@ TEST(zero_dest) {
 
 TEST(zero_dest_setflags) {
   SETUP();
-  ALLOW_ASM();
   RegisterDump before;
 
   START();
@@ -12981,37 +13302,49 @@ TEST(zero_dest_setflags) {
   __ Mov(x0, 0);
   __ Mov(x1, literal_base);
   for (int i = 2; i < 30; i++) {
-    __ Add(Register::GetXRegFromCode(i), Register::GetXRegFromCode(i-1), x1);
+    __ Add(Register::GetXRegFromCode(i), Register::GetXRegFromCode(i - 1), x1);
   }
   before.Dump(&masm);
 
   // All of these instructions should only write to the flags in these forms,
   // but have alternate forms which can write into the stack pointer.
-  __ adds(xzr, x0, Operand(x1, UXTX));
-  __ adds(xzr, x1, Operand(xzr, UXTX));
-  __ adds(xzr, x1, 1234);
-  __ adds(xzr, x0, x1);
-  __ adds(xzr, x1, xzr);
-  __ adds(xzr, xzr, x1);
+  {
+    ExactAssemblyScope scope(&masm, 6 * kInstructionSize);
+    __ adds(xzr, x0, Operand(x1, UXTX));
+    __ adds(xzr, x1, Operand(xzr, UXTX));
+    __ adds(xzr, x1, 1234);
+    __ adds(xzr, x0, x1);
+    __ adds(xzr, x1, xzr);
+    __ adds(xzr, xzr, x1);
+  }
 
-  __ ands(xzr, x2, ~0xf);
-  __ ands(xzr, xzr, ~0xf);
-  __ ands(xzr, x0, x2);
-  __ ands(xzr, x2, xzr);
-  __ ands(xzr, xzr, x2);
+  {
+    ExactAssemblyScope scope(&masm, 5 * kInstructionSize);
+    __ ands(xzr, x2, ~0xf);
+    __ ands(xzr, xzr, ~0xf);
+    __ ands(xzr, x0, x2);
+    __ ands(xzr, x2, xzr);
+    __ ands(xzr, xzr, x2);
+  }
 
-  __ bics(xzr, x3, ~0xf);
-  __ bics(xzr, xzr, ~0xf);
-  __ bics(xzr, x0, x3);
-  __ bics(xzr, x3, xzr);
-  __ bics(xzr, xzr, x3);
+  {
+    ExactAssemblyScope scope(&masm, 5 * kInstructionSize);
+    __ bics(xzr, x3, ~0xf);
+    __ bics(xzr, xzr, ~0xf);
+    __ bics(xzr, x0, x3);
+    __ bics(xzr, x3, xzr);
+    __ bics(xzr, xzr, x3);
+  }
 
-  __ subs(xzr, x0, Operand(x3, UXTX));
-  __ subs(xzr, x3, Operand(xzr, UXTX));
-  __ subs(xzr, x3, 1234);
-  __ subs(xzr, x0, x3);
-  __ subs(xzr, x3, xzr);
-  __ subs(xzr, xzr, x3);
+  {
+    ExactAssemblyScope scope(&masm, 6 * kInstructionSize);
+    __ subs(xzr, x0, Operand(x3, UXTX));
+    __ subs(xzr, x3, Operand(xzr, UXTX));
+    __ subs(xzr, x3, 1234);
+    __ subs(xzr, x0, x3);
+    __ subs(xzr, x3, xzr);
+    __ subs(xzr, xzr, x3);
+  }
 
   // Swap the saved stack pointer with the real one. If sp was written
   // during the test, it will show up in x30. This is done because the test
@@ -13264,8 +13597,8 @@ TEST(peek_poke_endianness) {
   uint64_t x0_expected = literal_base * 1;
   uint64_t x1_expected = literal_base * 2;
   uint64_t x4_expected = (x0_expected << 32) | (x0_expected >> 32);
-  uint64_t x5_expected = ((x1_expected << 16) & 0xffff0000) |
-                         ((x1_expected >> 16) & 0x0000ffff);
+  uint64_t x5_expected =
+      ((x1_expected << 16) & 0xffff0000) | ((x1_expected >> 16) & 0x0000ffff);
 
   ASSERT_EQUAL_64(x0_expected, x0);
   ASSERT_EQUAL_64(x1_expected, x1);
@@ -13311,13 +13644,13 @@ TEST(peek_poke_mixed) {
     __ Mov(x4, __ StackPointer());
     __ SetStackPointer(x4);
 
-    __ Poke(wzr, 0);    // Clobber the space we're about to drop.
+    __ Poke(wzr, 0);  // Clobber the space we're about to drop.
     __ Drop(4);
     __ Peek(x6, 0);
     __ Claim(8);
     __ Peek(w7, 10);
     __ Poke(x3, 28);
-    __ Poke(xzr, 0);    // Clobber the space we're about to drop.
+    __ Poke(xzr, 0);  // Clobber the space we're about to drop.
     __ Drop(8);
     __ Poke(x2, 12);
     __ Push(w0);
@@ -13336,8 +13669,8 @@ TEST(peek_poke_mixed) {
   uint64_t x2_expected = literal_base * 3;
   uint64_t x3_expected = literal_base * 4;
   uint64_t x6_expected = (x1_expected << 32) | (x0_expected >> 32);
-  uint64_t x7_expected = ((x1_expected << 16) & 0xffff0000) |
-                         ((x0_expected >> 48) & 0x0000ffff);
+  uint64_t x7_expected =
+      ((x1_expected << 16) & 0xffff0000) | ((x0_expected >> 48) & 0x0000ffff);
 
   ASSERT_EQUAL_64(x0_expected, x0);
   ASSERT_EQUAL_64(x1_expected, x1);
@@ -13429,9 +13762,9 @@ TEST(peek_poke_reglist) {
   ASSERT_EQUAL_FP64(RawbitsToDouble(4 * base_d), d12);
   ASSERT_EQUAL_FP64(RawbitsToDouble(1 * base_d), d13);
   ASSERT_EQUAL_FP64(RawbitsToDouble(2 * base_d), d14);
-  ASSERT_EQUAL_FP64(
-      RawbitsToDouble((base_d >> kSRegSize) | ((2 * base_d) << kSRegSize)),
-      d15);
+  ASSERT_EQUAL_FP64(RawbitsToDouble((base_d >> kSRegSize) |
+                                    ((2 * base_d) << kSRegSize)),
+                    d15);
   ASSERT_EQUAL_FP64(RawbitsToDouble(2 * base_d), d14);
   ASSERT_EQUAL_FP32(RawbitsToFloat((4 * base_d) & kSRegMask), s16);
   ASSERT_EQUAL_FP32(RawbitsToFloat((4 * base_d) >> kSRegSize), s17);
@@ -13450,7 +13783,7 @@ TEST(load_store_reglist) {
   //  * The value is not formed from repeating fixed-size smaller values, so it
   //    can be used to detect endianness-related errors.
   uint64_t high_base = UINT32_C(0x01000010);
-  uint64_t low_base =  UINT32_C(0x00100101);
+  uint64_t low_base = UINT32_C(0x00100101);
   uint64_t base = (high_base << 32) | low_base;
   uint64_t array[21];
   memset(array, 0, sizeof(array));
@@ -13597,8 +13930,8 @@ static void PushPopXRegSimpleHelper(int reg_count,
   // Work out which registers to use, based on reg_size.
   Register r[kNumberOfRegisters];
   Register x[kNumberOfRegisters];
-  RegList list = PopulateRegisterArray(NULL, x, r, reg_size, reg_count,
-                                       allowed);
+  RegList list =
+      PopulateRegisterArray(NULL, x, r, reg_size, reg_count, allowed);
 
   // Acquire all temps from the MacroAssembler. They are used arbitrarily below.
   UseScratchRegisterScope temps(&masm);
@@ -13632,14 +13965,22 @@ static void PushPopXRegSimpleHelper(int reg_count,
       case PushPopByFour:
         // Push high-numbered registers first (to the highest addresses).
         for (i = reg_count; i >= 4; i -= 4) {
-          __ Push(r[i-1], r[i-2], r[i-3], r[i-4]);
+          __ Push(r[i - 1], r[i - 2], r[i - 3], r[i - 4]);
         }
         // Finish off the leftovers.
         switch (i) {
-          case 3:  __ Push(r[2], r[1], r[0]); break;
-          case 2:  __ Push(r[1], r[0]);       break;
-          case 1:  __ Push(r[0]);             break;
-          default: VIXL_ASSERT(i == 0);            break;
+          case 3:
+            __ Push(r[2], r[1], r[0]);
+            break;
+          case 2:
+            __ Push(r[1], r[0]);
+            break;
+          case 1:
+            __ Push(r[0]);
+            break;
+          default:
+            VIXL_ASSERT(i == 0);
+            break;
         }
         break;
       case PushPopRegList:
@@ -13653,15 +13994,23 @@ static void PushPopXRegSimpleHelper(int reg_count,
     switch (pop_method) {
       case PushPopByFour:
         // Pop low-numbered registers first (from the lowest addresses).
-        for (i = 0; i <= (reg_count-4); i += 4) {
-          __ Pop(r[i], r[i+1], r[i+2], r[i+3]);
+        for (i = 0; i <= (reg_count - 4); i += 4) {
+          __ Pop(r[i], r[i + 1], r[i + 2], r[i + 3]);
         }
         // Finish off the leftovers.
         switch (reg_count - i) {
-          case 3:  __ Pop(r[i], r[i+1], r[i+2]); break;
-          case 2:  __ Pop(r[i], r[i+1]);         break;
-          case 1:  __ Pop(r[i]);                 break;
-          default: VIXL_ASSERT(i == reg_count);       break;
+          case 3:
+            __ Pop(r[i], r[i + 1], r[i + 2]);
+            break;
+          case 2:
+            __ Pop(r[i], r[i + 1]);
+            break;
+          case 1:
+            __ Pop(r[i]);
+            break;
+          default:
+            VIXL_ASSERT(i == reg_count);
+            break;
         }
         break;
       case PushPopRegList:
@@ -13683,7 +14032,7 @@ static void PushPopXRegSimpleHelper(int reg_count,
   // Check that the register contents were preserved.
   // Always use ASSERT_EQUAL_64, even when testing W registers, so we can test
   // that the upper word was properly cleared by Pop.
-  literal_base &= (0xffffffffffffffff >> (64-reg_size));
+  literal_base &= (0xffffffffffffffff >> (64 - reg_size));
   for (int i = 0; i < reg_count; i++) {
     if (x[i].Is(xzr)) {
       ASSERT_EQUAL_64(0, x[i]);
@@ -13699,24 +14048,48 @@ static void PushPopXRegSimpleHelper(int reg_count,
 TEST(push_pop_xreg_simple_32) {
   for (int claim = 0; claim <= 8; claim++) {
     for (int count = 0; count <= 8; count++) {
-      PushPopXRegSimpleHelper(count, claim, kWRegSize,
-                              PushPopByFour, PushPopByFour);
-      PushPopXRegSimpleHelper(count, claim, kWRegSize,
-                              PushPopByFour, PushPopRegList);
-      PushPopXRegSimpleHelper(count, claim, kWRegSize,
-                              PushPopRegList, PushPopByFour);
-      PushPopXRegSimpleHelper(count, claim, kWRegSize,
-                              PushPopRegList, PushPopRegList);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kWRegSize,
+                              PushPopByFour,
+                              PushPopByFour);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kWRegSize,
+                              PushPopByFour,
+                              PushPopRegList);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kWRegSize,
+                              PushPopRegList,
+                              PushPopByFour);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kWRegSize,
+                              PushPopRegList,
+                              PushPopRegList);
     }
     // Test with the maximum number of registers.
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kWRegSize, PushPopByFour, PushPopByFour);
+                            claim,
+                            kWRegSize,
+                            PushPopByFour,
+                            PushPopByFour);
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kWRegSize, PushPopByFour, PushPopRegList);
+                            claim,
+                            kWRegSize,
+                            PushPopByFour,
+                            PushPopRegList);
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kWRegSize, PushPopRegList, PushPopByFour);
+                            claim,
+                            kWRegSize,
+                            PushPopRegList,
+                            PushPopByFour);
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kWRegSize, PushPopRegList, PushPopRegList);
+                            claim,
+                            kWRegSize,
+                            PushPopRegList,
+                            PushPopRegList);
   }
 }
 
@@ -13724,24 +14097,48 @@ TEST(push_pop_xreg_simple_32) {
 TEST(push_pop_xreg_simple_64) {
   for (int claim = 0; claim <= 8; claim++) {
     for (int count = 0; count <= 8; count++) {
-      PushPopXRegSimpleHelper(count, claim, kXRegSize,
-                              PushPopByFour, PushPopByFour);
-      PushPopXRegSimpleHelper(count, claim, kXRegSize,
-                              PushPopByFour, PushPopRegList);
-      PushPopXRegSimpleHelper(count, claim, kXRegSize,
-                              PushPopRegList, PushPopByFour);
-      PushPopXRegSimpleHelper(count, claim, kXRegSize,
-                              PushPopRegList, PushPopRegList);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kXRegSize,
+                              PushPopByFour,
+                              PushPopByFour);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kXRegSize,
+                              PushPopByFour,
+                              PushPopRegList);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kXRegSize,
+                              PushPopRegList,
+                              PushPopByFour);
+      PushPopXRegSimpleHelper(count,
+                              claim,
+                              kXRegSize,
+                              PushPopRegList,
+                              PushPopRegList);
     }
     // Test with the maximum number of registers.
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kXRegSize, PushPopByFour, PushPopByFour);
+                            claim,
+                            kXRegSize,
+                            PushPopByFour,
+                            PushPopByFour);
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kXRegSize, PushPopByFour, PushPopRegList);
+                            claim,
+                            kXRegSize,
+                            PushPopByFour,
+                            PushPopRegList);
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kXRegSize, PushPopRegList, PushPopByFour);
+                            claim,
+                            kXRegSize,
+                            PushPopRegList,
+                            PushPopByFour);
     PushPopXRegSimpleHelper(kPushPopXRegMaxRegCount,
-                            claim, kXRegSize, PushPopRegList, PushPopRegList);
+                            claim,
+                            kXRegSize,
+                            PushPopRegList,
+                            PushPopRegList);
   }
 }
 
@@ -13777,8 +14174,8 @@ static void PushPopFPXRegSimpleHelper(int reg_count,
   // Work out which registers to use, based on reg_size.
   FPRegister v[kNumberOfRegisters];
   FPRegister d[kNumberOfRegisters];
-  RegList list = PopulateFPRegisterArray(NULL, d, v, reg_size, reg_count,
-                                         allowed);
+  RegList list =
+      PopulateFPRegisterArray(NULL, d, v, reg_size, reg_count, allowed);
 
   // Arbitrarily pick a register to use as a stack pointer.
   const Register& stack_pointer = x10;
@@ -13821,14 +14218,22 @@ static void PushPopFPXRegSimpleHelper(int reg_count,
       case PushPopByFour:
         // Push high-numbered registers first (to the highest addresses).
         for (i = reg_count; i >= 4; i -= 4) {
-          __ Push(v[i-1], v[i-2], v[i-3], v[i-4]);
+          __ Push(v[i - 1], v[i - 2], v[i - 3], v[i - 4]);
         }
         // Finish off the leftovers.
         switch (i) {
-          case 3:  __ Push(v[2], v[1], v[0]); break;
-          case 2:  __ Push(v[1], v[0]);       break;
-          case 1:  __ Push(v[0]);             break;
-          default: VIXL_ASSERT(i == 0);            break;
+          case 3:
+            __ Push(v[2], v[1], v[0]);
+            break;
+          case 2:
+            __ Push(v[1], v[0]);
+            break;
+          case 1:
+            __ Push(v[0]);
+            break;
+          default:
+            VIXL_ASSERT(i == 0);
+            break;
         }
         break;
       case PushPopRegList:
@@ -13842,15 +14247,23 @@ static void PushPopFPXRegSimpleHelper(int reg_count,
     switch (pop_method) {
       case PushPopByFour:
         // Pop low-numbered registers first (from the lowest addresses).
-        for (i = 0; i <= (reg_count-4); i += 4) {
-          __ Pop(v[i], v[i+1], v[i+2], v[i+3]);
+        for (i = 0; i <= (reg_count - 4); i += 4) {
+          __ Pop(v[i], v[i + 1], v[i + 2], v[i + 3]);
         }
         // Finish off the leftovers.
         switch (reg_count - i) {
-          case 3:  __ Pop(v[i], v[i+1], v[i+2]); break;
-          case 2:  __ Pop(v[i], v[i+1]);         break;
-          case 1:  __ Pop(v[i]);                 break;
-          default: VIXL_ASSERT(i == reg_count);       break;
+          case 3:
+            __ Pop(v[i], v[i + 1], v[i + 2]);
+            break;
+          case 2:
+            __ Pop(v[i], v[i + 1]);
+            break;
+          case 1:
+            __ Pop(v[i]);
+            break;
+          default:
+            VIXL_ASSERT(i == reg_count);
+            break;
         }
         break;
       case PushPopRegList:
@@ -13872,7 +14285,7 @@ static void PushPopFPXRegSimpleHelper(int reg_count,
   // Check that the register contents were preserved.
   // Always use ASSERT_EQUAL_FP64, even when testing S registers, so we can
   // test that the upper word was properly cleared by Pop.
-  literal_base &= (0xffffffffffffffff >> (64-reg_size));
+  literal_base &= (0xffffffffffffffff >> (64 - reg_size));
   for (int i = 0; i < reg_count; i++) {
     uint64_t literal = literal_base * i;
     double expected;
@@ -13887,24 +14300,48 @@ static void PushPopFPXRegSimpleHelper(int reg_count,
 TEST(push_pop_fp_xreg_simple_32) {
   for (int claim = 0; claim <= 8; claim++) {
     for (int count = 0; count <= 8; count++) {
-      PushPopFPXRegSimpleHelper(count, claim, kSRegSize,
-                                PushPopByFour, PushPopByFour);
-      PushPopFPXRegSimpleHelper(count, claim, kSRegSize,
-                                PushPopByFour, PushPopRegList);
-      PushPopFPXRegSimpleHelper(count, claim, kSRegSize,
-                                PushPopRegList, PushPopByFour);
-      PushPopFPXRegSimpleHelper(count, claim, kSRegSize,
-                                PushPopRegList, PushPopRegList);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kSRegSize,
+                                PushPopByFour,
+                                PushPopByFour);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kSRegSize,
+                                PushPopByFour,
+                                PushPopRegList);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kSRegSize,
+                                PushPopRegList,
+                                PushPopByFour);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kSRegSize,
+                                PushPopRegList,
+                                PushPopRegList);
     }
     // Test with the maximum number of registers.
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kSRegSize,
-                              PushPopByFour, PushPopByFour);
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kSRegSize,
-                              PushPopByFour, PushPopRegList);
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kSRegSize,
-                              PushPopRegList, PushPopByFour);
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kSRegSize,
-                              PushPopRegList, PushPopRegList);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kSRegSize,
+                              PushPopByFour,
+                              PushPopByFour);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kSRegSize,
+                              PushPopByFour,
+                              PushPopRegList);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kSRegSize,
+                              PushPopRegList,
+                              PushPopByFour);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kSRegSize,
+                              PushPopRegList,
+                              PushPopRegList);
   }
 }
 
@@ -13912,24 +14349,48 @@ TEST(push_pop_fp_xreg_simple_32) {
 TEST(push_pop_fp_xreg_simple_64) {
   for (int claim = 0; claim <= 8; claim++) {
     for (int count = 0; count <= 8; count++) {
-      PushPopFPXRegSimpleHelper(count, claim, kDRegSize,
-                                PushPopByFour, PushPopByFour);
-      PushPopFPXRegSimpleHelper(count, claim, kDRegSize,
-                                PushPopByFour, PushPopRegList);
-      PushPopFPXRegSimpleHelper(count, claim, kDRegSize,
-                                PushPopRegList, PushPopByFour);
-      PushPopFPXRegSimpleHelper(count, claim, kDRegSize,
-                                PushPopRegList, PushPopRegList);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kDRegSize,
+                                PushPopByFour,
+                                PushPopByFour);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kDRegSize,
+                                PushPopByFour,
+                                PushPopRegList);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kDRegSize,
+                                PushPopRegList,
+                                PushPopByFour);
+      PushPopFPXRegSimpleHelper(count,
+                                claim,
+                                kDRegSize,
+                                PushPopRegList,
+                                PushPopRegList);
     }
     // Test with the maximum number of registers.
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kDRegSize,
-                              PushPopByFour, PushPopByFour);
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kDRegSize,
-                              PushPopByFour, PushPopRegList);
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kDRegSize,
-                              PushPopRegList, PushPopByFour);
-    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount, claim, kDRegSize,
-                              PushPopRegList, PushPopRegList);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kDRegSize,
+                              PushPopByFour,
+                              PushPopByFour);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kDRegSize,
+                              PushPopByFour,
+                              PushPopRegList);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kDRegSize,
+                              PushPopRegList,
+                              PushPopByFour);
+    PushPopFPXRegSimpleHelper(kPushPopFPXRegMaxRegCount,
+                              claim,
+                              kDRegSize,
+                              PushPopRegList,
+                              PushPopRegList);
   }
 }
 
@@ -14012,7 +14473,7 @@ static void PushPopXRegMixedMethodsHelper(int claim, int reg_size) {
 
   // Always use ASSERT_EQUAL_64, even when testing W registers, so we can test
   // that the upper word was properly cleared by Pop.
-  literal_base &= (0xffffffffffffffff >> (64-reg_size));
+  literal_base &= (0xffffffffffffffff >> (64 - reg_size));
 
   ASSERT_EQUAL_64(literal_base * 3, x[9]);
   ASSERT_EQUAL_64(literal_base * 2, x[8]);
@@ -14178,7 +14639,7 @@ static void PushPopXRegWXOverlapHelper(int reg_count, int claim) {
     // If popping an even number of registers, the first one will be X-sized.
     // Otherwise, the first one will be W-sized.
     bool next_is_64 = !(reg_count & 1);
-    for (int i = reg_count-1; i >= 0; i--) {
+    for (int i = reg_count - 1; i >= 0; i--) {
       if (next_is_64) {
         __ Pop(x[i]);
         active_w_slots -= 2;
@@ -14491,8 +14952,8 @@ TEST(printf) {
   SETUP();
   START();
 
-  char const * test_plain_string = "Printf with no arguments.\n";
-  char const * test_substring = "'This is a substring.'";
+  char const* test_plain_string = "Printf with no arguments.\n";
+  char const* test_substring = "'This is a substring.'";
   RegisterDump before;
 
   // Initialize x29 to the value of the stack pointer. We will use x29 as a
@@ -14535,14 +14996,18 @@ TEST(printf) {
   // Check that we don't clobber any registers.
   before.Dump(&masm);
 
-  __ Printf(test_plain_string);   // NOLINT(runtime/printf)
+  __ Printf(test_plain_string);  // NOLINT(runtime/printf)
   __ Printf("x0: %" PRId64 ", x1: 0x%08" PRIx64 "\n", x0, x1);
-  __ Printf("w5: %" PRId32 ", x5: %" PRId64"\n", w5, x5);
+  __ Printf("w5: %" PRId32 ", x5: %" PRId64 "\n", w5, x5);
   __ Printf("d0: %f\n", d0);
   __ Printf("Test %%s: %s\n", x2);
-  __ Printf("w3(uint32): %" PRIu32 "\nw4(int32): %" PRId32 "\n"
+  __ Printf("w3(uint32): %" PRIu32 "\nw4(int32): %" PRId32
+            "\n"
             "x5(uint64): %" PRIu64 "\nx6(int64): %" PRId64 "\n",
-            w3, w4, x5, x6);
+            w3,
+            w4,
+            x5,
+            x6);
   __ Printf("%%f: %f\n%%g: %g\n%%e: %e\n%%E: %E\n", s1, s2, d3, d4);
   __ Printf("0x%" PRIx32 ", 0x%" PRIx64 "\n", w28, x28);
   __ Printf("%g\n", d10);
@@ -14550,7 +15015,8 @@ TEST(printf) {
 
   // Print the stack pointer (sp).
   __ Printf("StackPointer(sp): 0x%016" PRIx64 ", 0x%08" PRIx32 "\n",
-            __ StackPointer(), __ StackPointer().W());
+            __ StackPointer(),
+            __ StackPointer().W());
 
   // Test with a different stack pointer.
   const Register old_stack_pointer = __ StackPointer();
@@ -14558,7 +15024,8 @@ TEST(printf) {
   __ SetStackPointer(x29);
   // Print the stack pointer (not sp).
   __ Printf("StackPointer(not sp): 0x%016" PRIx64 ", 0x%08" PRIx32 "\n",
-            __ StackPointer(), __ StackPointer().W());
+            __ StackPointer(),
+            __ StackPointer().W());
   __ Mov(old_stack_pointer, __ StackPointer());
   __ SetStackPointer(old_stack_pointer);
 
@@ -14567,9 +15034,15 @@ TEST(printf) {
 
   // Mixed argument types.
   __ Printf("w3: %" PRIu32 ", s1: %f, x5: %" PRIu64 ", d3: %f\n",
-            w3, s1, x5, d3);
+            w3,
+            s1,
+            x5,
+            d3);
   __ Printf("s1: %f, d3: %f, w3: %" PRId32 ", x5: %" PRId64 "\n",
-            s1, d3, w3, x5);
+            s1,
+            d3,
+            w3,
+            x5);
 
   END();
   RUN();
@@ -14588,8 +15061,8 @@ TEST(printf_no_preserve) {
   SETUP();
   START();
 
-  char const * test_plain_string = "Printf with no arguments.\n";
-  char const * test_substring = "'This is a substring.'";
+  char const* test_plain_string = "Printf with no arguments.\n";
+  char const* test_substring = "'This is a substring.'";
 
   __ PrintfNoPreserve(test_plain_string);
   __ Mov(x19, x0);
@@ -14597,7 +15070,7 @@ TEST(printf_no_preserve) {
   // Test simple integer arguments.
   __ Mov(x0, 1234);
   __ Mov(x1, 0x1234);
-  __ PrintfNoPreserve("x0: %" PRId64", x1: 0x%08" PRIx64 "\n", x0, x1);
+  __ PrintfNoPreserve("x0: %" PRId64 ", x1: 0x%08" PRIx64 "\n", x0, x1);
   __ Mov(x20, x0);
 
   // Test simple floating-point arguments.
@@ -14615,9 +15088,13 @@ TEST(printf_no_preserve) {
   __ Mov(w4, 0xffffffff);
   __ Mov(x5, 0xffffffffffffffff);
   __ Mov(x6, 0xffffffffffffffff);
-  __ PrintfNoPreserve("w3(uint32): %" PRIu32 "\nw4(int32): %" PRId32 "\n"
+  __ PrintfNoPreserve("w3(uint32): %" PRIu32 "\nw4(int32): %" PRId32
+                      "\n"
                       "x5(uint64): %" PRIu64 "\nx6(int64): %" PRId64 "\n",
-                      w3, w4, x5, x6);
+                      w3,
+                      w4,
+                      x5,
+                      x6);
   __ Mov(x23, x0);
 
   __ Fmov(s1, 1.234);
@@ -14641,9 +15118,10 @@ TEST(printf_no_preserve) {
   __ Mov(x29, old_stack_pointer);
   __ SetStackPointer(x29);
   // Print the stack pointer (not sp).
-  __ PrintfNoPreserve(
-      "StackPointer(not sp): 0x%016" PRIx64 ", 0x%08" PRIx32 "\n",
-      __ StackPointer(), __ StackPointer().W());
+  __ PrintfNoPreserve("StackPointer(not sp): 0x%016" PRIx64 ", 0x%08" PRIx32
+                      "\n",
+                      __ StackPointer(),
+                      __ StackPointer().W());
   __ Mov(x27, x0);
   __ Mov(old_stack_pointer, __ StackPointer());
   __ SetStackPointer(old_stack_pointer);
@@ -14661,7 +15139,10 @@ TEST(printf_no_preserve) {
   __ Mov(x5, 0xffffffffffffffff);
   __ Fmov(d3, 3.456);
   __ PrintfNoPreserve("w3: %" PRIu32 ", s1: %f, x5: %" PRIu64 ", d3: %f\n",
-                      w3, s1, x5, d3);
+                      w3,
+                      s1,
+                      x5,
+                      d3);
   __ Mov(x29, x0);
 
   END();
@@ -15439,12 +15920,12 @@ TEST(ldxr_stxr) {
 
   // As above, but get suitably-aligned values for ldxp and stxp.
   uint32_t wp_data[] = {0, 0, 0, 0, 0};
-  uint32_t * wp = AlignUp(wp_data + 1, kWRegSizeInBytes * 2) - 1;
-  wp[1] = 0x12345678;           // wp[1] is 64-bit-aligned.
+  uint32_t* wp = AlignUp(wp_data + 1, kWRegSizeInBytes * 2) - 1;
+  wp[1] = 0x12345678;  // wp[1] is 64-bit-aligned.
   wp[2] = 0x87654321;
   uint64_t xp_data[] = {0, 0, 0, 0, 0};
-  uint64_t * xp = AlignUp(xp_data + 1, kXRegSizeInBytes * 2) - 1;
-  xp[1] = 0x123456789abcdef0;   // xp[1] is 128-bit-aligned.
+  uint64_t* xp = AlignUp(xp_data + 1, kXRegSizeInBytes * 2) - 1;
+  xp[1] = 0x123456789abcdef0;  // xp[1] is 128-bit-aligned.
   xp[2] = 0x0fedcba987654321;
 
   SETUP();
@@ -15540,12 +16021,12 @@ TEST(ldaxr_stlxr) {
 
   // As above, but get suitably-aligned values for ldxp and stxp.
   uint32_t wp_data[] = {0, 0, 0, 0, 0};
-  uint32_t * wp = AlignUp(wp_data + 1, kWRegSizeInBytes * 2) - 1;
-  wp[1] = 0x12345678;           // wp[1] is 64-bit-aligned.
+  uint32_t* wp = AlignUp(wp_data + 1, kWRegSizeInBytes * 2) - 1;
+  wp[1] = 0x12345678;  // wp[1] is 64-bit-aligned.
   wp[2] = 0x87654321;
   uint64_t xp_data[] = {0, 0, 0, 0, 0};
-  uint64_t * xp = AlignUp(xp_data + 1, kXRegSizeInBytes * 2) - 1;
-  xp[1] = 0x123456789abcdef0;   // xp[1] is 128-bit-aligned.
+  uint64_t* xp = AlignUp(xp_data + 1, kXRegSizeInBytes * 2) - 1;
+  xp[1] = 0x123456789abcdef0;  // xp[1] is 128-bit-aligned.
   xp[2] = 0x0fedcba987654321;
 
   SETUP();
@@ -15634,7 +16115,7 @@ TEST(ldaxr_stlxr) {
 TEST(clrex) {
   // This data should never be written.
   uint64_t data[] = {0, 0, 0};
-  uint64_t * data_aligned = AlignUp(data, kXRegSizeInBytes * 2);
+  uint64_t* data_aligned = AlignUp(data, kXRegSizeInBytes * 2);
 
   SETUP();
   START();
@@ -15738,7 +16219,7 @@ TEST(clrex) {
 // Check that the simulator occasionally makes store-exclusive fail.
 TEST(ldxr_stxr_fail) {
   uint64_t data[] = {0, 0, 0};
-  uint64_t * data_aligned = AlignUp(data, kXRegSizeInBytes * 2);
+  uint64_t* data_aligned = AlignUp(data, kXRegSizeInBytes * 2);
 
   // Impose a hard limit on the number of attempts, so the test cannot hang.
   static const uint64_t kWatchdog = 10000;
@@ -15822,7 +16303,7 @@ TEST(ldxr_stxr_fail) {
 // Check that the simulator occasionally makes store-exclusive fail.
 TEST(ldaxr_stlxr_fail) {
   uint64_t data[] = {0, 0, 0};
-  uint64_t * data_aligned = AlignUp(data, kXRegSizeInBytes * 2);
+  uint64_t* data_aligned = AlignUp(data, kXRegSizeInBytes * 2);
 
   // Impose a hard limit on the number of attempts, so the test cannot hang.
   static const uint64_t kWatchdog = 10000;
@@ -15903,7 +16384,7 @@ TEST(ldaxr_stlxr_fail) {
 
 
 TEST(load_store_tagged_immediate_offset) {
-  uint64_t tags[] = { 0x00, 0x1, 0x55, 0xff };
+  uint64_t tags[] = {0x00, 0x1, 0x55, 0xff};
   int tag_count = sizeof(tags) / sizeof(tags[0]);
 
   const int kMaxDataLength = 160;
@@ -15927,7 +16408,6 @@ TEST(load_store_tagged_immediate_offset) {
       memset(dst, 0, kMaxDataLength);
 
       SETUP();
-      ALLOW_ASM();
       START();
 
       __ Mov(x0, src_tagged);
@@ -15936,94 +16416,160 @@ TEST(load_store_tagged_immediate_offset) {
       int offset = 0;
 
       // Scaled-immediate offsets.
-      __ ldp(q0, q1, MemOperand(x0, offset));
-      __ stp(q0, q1, MemOperand(x1, offset));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(q0, q1, MemOperand(x0, offset));
+        __ stp(q0, q1, MemOperand(x1, offset));
+      }
       offset += 2 * kQRegSizeInBytes;
 
-      __ ldp(x2, x3, MemOperand(x0, offset));
-      __ stp(x2, x3, MemOperand(x1, offset));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(x2, x3, MemOperand(x0, offset));
+        __ stp(x2, x3, MemOperand(x1, offset));
+      }
       offset += 2 * kXRegSizeInBytes;
 
-      __ ldpsw(x2, x3, MemOperand(x0, offset));
-      __ stp(w2, w3, MemOperand(x1, offset));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldpsw(x2, x3, MemOperand(x0, offset));
+        __ stp(w2, w3, MemOperand(x1, offset));
+      }
       offset += 2 * kWRegSizeInBytes;
 
-      __ ldp(d0, d1, MemOperand(x0, offset));
-      __ stp(d0, d1, MemOperand(x1, offset));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(d0, d1, MemOperand(x0, offset));
+        __ stp(d0, d1, MemOperand(x1, offset));
+      }
       offset += 2 * kDRegSizeInBytes;
 
-      __ ldp(w2, w3, MemOperand(x0, offset));
-      __ stp(w2, w3, MemOperand(x1, offset));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(w2, w3, MemOperand(x0, offset));
+        __ stp(w2, w3, MemOperand(x1, offset));
+      }
       offset += 2 * kWRegSizeInBytes;
 
-      __ ldp(s0, s1, MemOperand(x0, offset));
-      __ stp(s0, s1, MemOperand(x1, offset));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(s0, s1, MemOperand(x0, offset));
+        __ stp(s0, s1, MemOperand(x1, offset));
+      }
       offset += 2 * kSRegSizeInBytes;
 
-      __ ldr(x2, MemOperand(x0, offset), RequireScaledOffset);
-      __ str(x2, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(x2, MemOperand(x0, offset), RequireScaledOffset);
+        __ str(x2, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += kXRegSizeInBytes;
 
-      __ ldr(d0, MemOperand(x0, offset), RequireScaledOffset);
-      __ str(d0, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(d0, MemOperand(x0, offset), RequireScaledOffset);
+        __ str(d0, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += kDRegSizeInBytes;
 
-      __ ldr(w2, MemOperand(x0, offset), RequireScaledOffset);
-      __ str(w2, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(w2, MemOperand(x0, offset), RequireScaledOffset);
+        __ str(w2, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += kWRegSizeInBytes;
 
-      __ ldr(s0, MemOperand(x0, offset), RequireScaledOffset);
-      __ str(s0, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(s0, MemOperand(x0, offset), RequireScaledOffset);
+        __ str(s0, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += kSRegSizeInBytes;
 
-      __ ldrh(w2, MemOperand(x0, offset), RequireScaledOffset);
-      __ strh(w2, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrh(w2, MemOperand(x0, offset), RequireScaledOffset);
+        __ strh(w2, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += 2;
 
-      __ ldrsh(w2, MemOperand(x0, offset), RequireScaledOffset);
-      __ strh(w2, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrsh(w2, MemOperand(x0, offset), RequireScaledOffset);
+        __ strh(w2, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += 2;
 
-      __ ldrb(w2, MemOperand(x0, offset), RequireScaledOffset);
-      __ strb(w2, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrb(w2, MemOperand(x0, offset), RequireScaledOffset);
+        __ strb(w2, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += 1;
 
-      __ ldrsb(w2, MemOperand(x0, offset), RequireScaledOffset);
-      __ strb(w2, MemOperand(x1, offset), RequireScaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrsb(w2, MemOperand(x0, offset), RequireScaledOffset);
+        __ strb(w2, MemOperand(x1, offset), RequireScaledOffset);
+      }
       offset += 1;
 
       // Unscaled-immediate offsets.
 
-      __ ldur(x2, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ stur(x2, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldur(x2, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ stur(x2, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += kXRegSizeInBytes;
 
-      __ ldur(d0, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ stur(d0, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldur(d0, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ stur(d0, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += kDRegSizeInBytes;
 
-      __ ldur(w2, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ stur(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldur(w2, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ stur(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += kWRegSizeInBytes;
 
-      __ ldur(s0, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ stur(s0, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldur(s0, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ stur(s0, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += kSRegSizeInBytes;
 
-      __ ldurh(w2, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ sturh(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldurh(w2, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ sturh(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += 2;
 
-      __ ldursh(w2, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ sturh(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldursh(w2, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ sturh(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += 2;
 
-      __ ldurb(w2, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ sturb(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldurb(w2, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ sturb(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += 1;
 
-      __ ldursb(w2, MemOperand(x0, offset), RequireUnscaledOffset);
-      __ sturb(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldursb(w2, MemOperand(x0, offset), RequireUnscaledOffset);
+        __ sturb(w2, MemOperand(x1, offset), RequireUnscaledOffset);
+      }
       offset += 1;
 
       // Extract the tag (so we can test that it was preserved correctly).
@@ -16049,7 +16595,7 @@ TEST(load_store_tagged_immediate_offset) {
 
 
 TEST(load_store_tagged_immediate_preindex) {
-  uint64_t tags[] = { 0x00, 0x1, 0x55, 0xff };
+  uint64_t tags[] = {0x00, 0x1, 0x55, 0xff};
   int tag_count = sizeof(tags) / sizeof(tags[0]);
 
   const int kMaxDataLength = 128;
@@ -16075,7 +16621,6 @@ TEST(load_store_tagged_immediate_preindex) {
       }
 
       SETUP();
-      ALLOW_ASM();
       START();
 
       // Each MemOperand must apply a pre-index equal to the size of the
@@ -16088,73 +16633,115 @@ TEST(load_store_tagged_immediate_preindex) {
       __ Mov(x0, src_tagged - preindex);
       __ Mov(x1, dst_tagged - preindex);
 
-      __ ldp(q0, q1, MemOperand(x0, preindex, PreIndex));
-      __ stp(q0, q1, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(q0, q1, MemOperand(x0, preindex, PreIndex));
+        __ stp(q0, q1, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2 * kQRegSizeInBytes;
       data_length = preindex;
 
-      __ ldp(x2, x3, MemOperand(x0, preindex, PreIndex));
-      __ stp(x2, x3, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(x2, x3, MemOperand(x0, preindex, PreIndex));
+        __ stp(x2, x3, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2 * kXRegSizeInBytes;
       data_length += preindex;
 
-      __ ldpsw(x2, x3, MemOperand(x0, preindex, PreIndex));
-      __ stp(w2, w3, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldpsw(x2, x3, MemOperand(x0, preindex, PreIndex));
+        __ stp(w2, w3, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2 * kWRegSizeInBytes;
       data_length += preindex;
 
-      __ ldp(d0, d1, MemOperand(x0, preindex, PreIndex));
-      __ stp(d0, d1, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(d0, d1, MemOperand(x0, preindex, PreIndex));
+        __ stp(d0, d1, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2 * kDRegSizeInBytes;
       data_length += preindex;
 
-      __ ldp(w2, w3, MemOperand(x0, preindex, PreIndex));
-      __ stp(w2, w3, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(w2, w3, MemOperand(x0, preindex, PreIndex));
+        __ stp(w2, w3, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2 * kWRegSizeInBytes;
       data_length += preindex;
 
-      __ ldp(s0, s1, MemOperand(x0, preindex, PreIndex));
-      __ stp(s0, s1, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(s0, s1, MemOperand(x0, preindex, PreIndex));
+        __ stp(s0, s1, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2 * kSRegSizeInBytes;
       data_length += preindex;
 
-      __ ldr(x2, MemOperand(x0, preindex, PreIndex));
-      __ str(x2, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(x2, MemOperand(x0, preindex, PreIndex));
+        __ str(x2, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = kXRegSizeInBytes;
       data_length += preindex;
 
-      __ ldr(d0, MemOperand(x0, preindex, PreIndex));
-      __ str(d0, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(d0, MemOperand(x0, preindex, PreIndex));
+        __ str(d0, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = kDRegSizeInBytes;
       data_length += preindex;
 
-      __ ldr(w2, MemOperand(x0, preindex, PreIndex));
-      __ str(w2, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(w2, MemOperand(x0, preindex, PreIndex));
+        __ str(w2, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = kWRegSizeInBytes;
       data_length += preindex;
 
-      __ ldr(s0, MemOperand(x0, preindex, PreIndex));
-      __ str(s0, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(s0, MemOperand(x0, preindex, PreIndex));
+        __ str(s0, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = kSRegSizeInBytes;
       data_length += preindex;
 
-      __ ldrh(w2, MemOperand(x0, preindex, PreIndex));
-      __ strh(w2, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrh(w2, MemOperand(x0, preindex, PreIndex));
+        __ strh(w2, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2;
       data_length += preindex;
 
-      __ ldrsh(w2, MemOperand(x0, preindex, PreIndex));
-      __ strh(w2, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrsh(w2, MemOperand(x0, preindex, PreIndex));
+        __ strh(w2, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 2;
       data_length += preindex;
 
-      __ ldrb(w2, MemOperand(x0, preindex, PreIndex));
-      __ strb(w2, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrb(w2, MemOperand(x0, preindex, PreIndex));
+        __ strb(w2, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 1;
       data_length += preindex;
 
-      __ ldrsb(w2, MemOperand(x0, preindex, PreIndex));
-      __ strb(w2, MemOperand(x1, preindex, PreIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrsb(w2, MemOperand(x0, preindex, PreIndex));
+        __ strb(w2, MemOperand(x1, preindex, PreIndex));
+      }
       preindex = 1;
       data_length += preindex;
 
@@ -16179,7 +16766,7 @@ TEST(load_store_tagged_immediate_preindex) {
 
 
 TEST(load_store_tagged_immediate_postindex) {
-  uint64_t tags[] = { 0x00, 0x1, 0x55, 0xff };
+  uint64_t tags[] = {0x00, 0x1, 0x55, 0xff};
   int tag_count = sizeof(tags) / sizeof(tags[0]);
 
   const int kMaxDataLength = 128;
@@ -16205,7 +16792,6 @@ TEST(load_store_tagged_immediate_postindex) {
       }
 
       SETUP();
-      ALLOW_ASM();
       START();
 
       int postindex = 2 * kXRegSizeInBytes;
@@ -16214,73 +16800,115 @@ TEST(load_store_tagged_immediate_postindex) {
       __ Mov(x0, src_tagged);
       __ Mov(x1, dst_tagged);
 
-      __ ldp(x2, x3, MemOperand(x0, postindex, PostIndex));
-      __ stp(x2, x3, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(x2, x3, MemOperand(x0, postindex, PostIndex));
+        __ stp(x2, x3, MemOperand(x1, postindex, PostIndex));
+      }
       data_length = postindex;
 
       postindex = 2 * kQRegSizeInBytes;
-      __ ldp(q0, q1, MemOperand(x0, postindex, PostIndex));
-      __ stp(q0, q1, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(q0, q1, MemOperand(x0, postindex, PostIndex));
+        __ stp(q0, q1, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 2 * kWRegSizeInBytes;
-      __ ldpsw(x2, x3, MemOperand(x0, postindex, PostIndex));
-      __ stp(w2, w3, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldpsw(x2, x3, MemOperand(x0, postindex, PostIndex));
+        __ stp(w2, w3, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 2 * kDRegSizeInBytes;
-      __ ldp(d0, d1, MemOperand(x0, postindex, PostIndex));
-      __ stp(d0, d1, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(d0, d1, MemOperand(x0, postindex, PostIndex));
+        __ stp(d0, d1, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 2 * kWRegSizeInBytes;
-      __ ldp(w2, w3, MemOperand(x0, postindex, PostIndex));
-      __ stp(w2, w3, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(w2, w3, MemOperand(x0, postindex, PostIndex));
+        __ stp(w2, w3, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 2 * kSRegSizeInBytes;
-      __ ldp(s0, s1, MemOperand(x0, postindex, PostIndex));
-      __ stp(s0, s1, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldp(s0, s1, MemOperand(x0, postindex, PostIndex));
+        __ stp(s0, s1, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = kXRegSizeInBytes;
-      __ ldr(x2, MemOperand(x0, postindex, PostIndex));
-      __ str(x2, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(x2, MemOperand(x0, postindex, PostIndex));
+        __ str(x2, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = kDRegSizeInBytes;
-      __ ldr(d0, MemOperand(x0, postindex, PostIndex));
-      __ str(d0, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(d0, MemOperand(x0, postindex, PostIndex));
+        __ str(d0, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = kWRegSizeInBytes;
-      __ ldr(w2, MemOperand(x0, postindex, PostIndex));
-      __ str(w2, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(w2, MemOperand(x0, postindex, PostIndex));
+        __ str(w2, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = kSRegSizeInBytes;
-      __ ldr(s0, MemOperand(x0, postindex, PostIndex));
-      __ str(s0, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldr(s0, MemOperand(x0, postindex, PostIndex));
+        __ str(s0, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 2;
-      __ ldrh(w2, MemOperand(x0, postindex, PostIndex));
-      __ strh(w2, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrh(w2, MemOperand(x0, postindex, PostIndex));
+        __ strh(w2, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 2;
-      __ ldrsh(w2, MemOperand(x0, postindex, PostIndex));
-      __ strh(w2, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrsh(w2, MemOperand(x0, postindex, PostIndex));
+        __ strh(w2, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 1;
-      __ ldrb(w2, MemOperand(x0, postindex, PostIndex));
-      __ strb(w2, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrb(w2, MemOperand(x0, postindex, PostIndex));
+        __ strb(w2, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       postindex = 1;
-      __ ldrsb(w2, MemOperand(x0, postindex, PostIndex));
-      __ strb(w2, MemOperand(x1, postindex, PostIndex));
+      {
+        ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+        __ ldrsb(w2, MemOperand(x0, postindex, PostIndex));
+        __ strb(w2, MemOperand(x1, postindex, PostIndex));
+      }
       data_length += postindex;
 
       VIXL_ASSERT(kMaxDataLength >= data_length);
@@ -16304,7 +16932,7 @@ TEST(load_store_tagged_immediate_postindex) {
 
 
 TEST(load_store_tagged_register_offset) {
-  uint64_t tags[] = { 0x00, 0x1, 0x55, 0xff };
+  uint64_t tags[] = {0x00, 0x1, 0x55, 0xff};
   int tag_count = sizeof(tags) / sizeof(tags[0]);
 
   const int kMaxDataLength = 128;
@@ -16335,50 +16963,73 @@ TEST(load_store_tagged_register_offset) {
         }
 
         SETUP();
-        ALLOW_ASM();
         START();
 
         __ Mov(x0, src_tagged);
         __ Mov(x1, dst_tagged);
 
         __ Mov(x10, offset_base + data_length);
-        __ ldr(x2, MemOperand(x0, x10));
-        __ str(x2, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldr(x2, MemOperand(x0, x10));
+          __ str(x2, MemOperand(x1, x10));
+        }
         data_length += kXRegSizeInBytes;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldr(d0, MemOperand(x0, x10));
-        __ str(d0, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldr(d0, MemOperand(x0, x10));
+          __ str(d0, MemOperand(x1, x10));
+        }
         data_length += kDRegSizeInBytes;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldr(w2, MemOperand(x0, x10));
-        __ str(w2, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldr(w2, MemOperand(x0, x10));
+          __ str(w2, MemOperand(x1, x10));
+        }
         data_length += kWRegSizeInBytes;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldr(s0, MemOperand(x0, x10));
-        __ str(s0, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldr(s0, MemOperand(x0, x10));
+          __ str(s0, MemOperand(x1, x10));
+        }
         data_length += kSRegSizeInBytes;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldrh(w2, MemOperand(x0, x10));
-        __ strh(w2, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldrh(w2, MemOperand(x0, x10));
+          __ strh(w2, MemOperand(x1, x10));
+        }
         data_length += 2;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldrsh(w2, MemOperand(x0, x10));
-        __ strh(w2, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldrsh(w2, MemOperand(x0, x10));
+          __ strh(w2, MemOperand(x1, x10));
+        }
         data_length += 2;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldrb(w2, MemOperand(x0, x10));
-        __ strb(w2, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldrb(w2, MemOperand(x0, x10));
+          __ strb(w2, MemOperand(x1, x10));
+        }
         data_length += 1;
 
         __ Mov(x10, offset_base + data_length);
-        __ ldrsb(w2, MemOperand(x0, x10));
-        __ strb(w2, MemOperand(x1, x10));
+        {
+          ExactAssemblyScope scope(&masm, 2 * kInstructionSize);
+          __ ldrsb(w2, MemOperand(x0, x10));
+          __ strb(w2, MemOperand(x1, x10));
+        }
         data_length += 1;
 
         VIXL_ASSERT(kMaxDataLength >= data_length);
@@ -16404,8 +17055,8 @@ TEST(load_store_tagged_register_offset) {
 
 
 TEST(load_store_tagged_register_postindex) {
-  uint64_t src[] = { 0x0706050403020100, 0x0f0e0d0c0b0a0908 };
-  uint64_t tags[] = { 0x00, 0x1, 0x55, 0xff };
+  uint64_t src[] = {0x0706050403020100, 0x0f0e0d0c0b0a0908};
+  uint64_t tags[] = {0x00, 0x1, 0x55, 0xff};
   int tag_count = sizeof(tags) / sizeof(tags[0]);
 
   for (int j = 0; j < tag_count; j++) {
@@ -16546,8 +17197,8 @@ TEST(neon_3same_addp) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000055aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000055aaff55ff00, 0xaa55ff55555500ff);
   __ Addp(v16.V16B(), v0.V16B(), v1.V16B());
 
   END();
@@ -16763,8 +17414,8 @@ TEST(neon_3same_mul) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000055aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000055aaff55ff00, 0xaa55ff55555500ff);
   __ Movi(v16.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v17.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
 
@@ -16782,14 +17433,13 @@ TEST(neon_3same_mul) {
 }
 
 
-
 TEST(neon_3same_absdiff) {
   SETUP();
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000055aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000055aaff55ff00, 0xaa55ff55555500ff);
   __ Movi(v16.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v17.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
 
@@ -16814,8 +17464,8 @@ TEST(neon_byelement_mul) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000155aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55aa, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000155aaff55ff00, 0xaa55ff55555500ff);
 
 
   __ Mul(v16.V4H(), v0.V4H(), v1.H(), 0);
@@ -16869,13 +17519,13 @@ TEST(neon_byelement_mull) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xaa55ff55555500ff, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000155aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xaa55ff55555500ff, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000155aaff55ff00, 0xaa55ff55555500ff);
 
 
-  __ Smull(v16.V4S(),  v0.V4H(), v1.H(), 7);
+  __ Smull(v16.V4S(), v0.V4H(), v1.H(), 7);
   __ Smull2(v17.V4S(), v0.V8H(), v1.H(), 0);
-  __ Umull(v18.V4S(),  v0.V4H(), v1.H(), 7);
+  __ Umull(v18.V4S(), v0.V4H(), v1.H(), 7);
   __ Umull2(v19.V4S(), v0.V8H(), v1.H(), 0);
 
   __ Movi(v20.V2D(), 0x0000000100000002, 0x0000000200000001);
@@ -16883,9 +17533,9 @@ TEST(neon_byelement_mull) {
   __ Movi(v22.V2D(), 0x0000000100000002, 0x0000000200000001);
   __ Movi(v23.V2D(), 0x0000000100000002, 0x0000000200000001);
 
-  __ Smlal(v20.V4S(),  v0.V4H(), v1.H(), 7);
+  __ Smlal(v20.V4S(), v0.V4H(), v1.H(), 7);
   __ Smlal2(v21.V4S(), v0.V8H(), v1.H(), 0);
-  __ Umlal(v22.V4S(),  v0.V4H(), v1.H(), 7);
+  __ Umlal(v22.V4S(), v0.V4H(), v1.H(), 7);
   __ Umlal2(v23.V4S(), v0.V8H(), v1.H(), 0);
 
   __ Movi(v24.V2D(), 0xffffff00ffffaa55, 0x000000ff000055aa);
@@ -16893,9 +17543,9 @@ TEST(neon_byelement_mull) {
   __ Movi(v26.V2D(), 0x0000ff000000aa55, 0x000000ff000055aa);
   __ Movi(v27.V2D(), 0x00a9aaab00fe55ab, 0x0054ffab0000fe01);
 
-  __ Smlsl(v24.V4S(),  v0.V4H(), v1.H(), 7);
+  __ Smlsl(v24.V4S(), v0.V4H(), v1.H(), 7);
   __ Smlsl2(v25.V4S(), v0.V8H(), v1.H(), 0);
-  __ Umlsl(v26.V4S(),  v0.V4H(), v1.H(), 7);
+  __ Umlsl(v26.V4S(), v0.V4H(), v1.H(), 7);
   __ Umlsl2(v27.V4S(), v0.V8H(), v1.H(), 0);
 
   END();
@@ -16974,8 +17624,8 @@ TEST(neon_3diff_absdiff) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55ab, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000055aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55ab, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000055aaff55ff00, 0xaa55ff55555500ff);
   __ Movi(v16.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v17.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v18.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
@@ -17002,14 +17652,14 @@ TEST(neon_3diff_sqdmull) {
 
   START();
 
-  __ Movi(v0.V2D(),  0x7fff7fff80008000, 0x80007fff7fff8000);
-  __ Movi(v1.V2D(),  0x80007fff7fff8000, 0x7fff7fff80008000);
-  __ Movi(v2.V2D(),  0x800000007fffffff, 0x7fffffff80000000);
-  __ Movi(v3.V2D(),  0x8000000080000000, 0x8000000080000000);
+  __ Movi(v0.V2D(), 0x7fff7fff80008000, 0x80007fff7fff8000);
+  __ Movi(v1.V2D(), 0x80007fff7fff8000, 0x7fff7fff80008000);
+  __ Movi(v2.V2D(), 0x800000007fffffff, 0x7fffffff80000000);
+  __ Movi(v3.V2D(), 0x8000000080000000, 0x8000000080000000);
 
-  __ Sqdmull(v16.V4S(),  v0.V4H(), v1.V4H());
+  __ Sqdmull(v16.V4S(), v0.V4H(), v1.V4H());
   __ Sqdmull2(v17.V4S(), v0.V8H(), v1.V8H());
-  __ Sqdmull(v18.V2D(),  v2.V2S(), v3.V2S());
+  __ Sqdmull(v18.V2D(), v2.V2S(), v3.V2S());
   __ Sqdmull2(v19.V2D(), v2.V4S(), v3.V4S());
   __ Sqdmull(s20, h0, h1);
   __ Sqdmull(d21, s2, s3);
@@ -17032,10 +17682,10 @@ TEST(neon_3diff_sqdmlal) {
 
   START();
 
-  __ Movi(v0.V2D(),  0x7fff7fff80008000, 0x80007fff7fff8000);
-  __ Movi(v1.V2D(),  0x80007fff7fff8000, 0x7fff7fff80008000);
-  __ Movi(v2.V2D(),  0x800000007fffffff, 0x7fffffff80000000);
-  __ Movi(v3.V2D(),  0x8000000080000000, 0x8000000080000000);
+  __ Movi(v0.V2D(), 0x7fff7fff80008000, 0x80007fff7fff8000);
+  __ Movi(v1.V2D(), 0x80007fff7fff8000, 0x7fff7fff80008000);
+  __ Movi(v2.V2D(), 0x800000007fffffff, 0x7fffffff80000000);
+  __ Movi(v3.V2D(), 0x8000000080000000, 0x8000000080000000);
 
   __ Movi(v16.V2D(), 0xffffffff00000001, 0x8fffffff00000001);
   __ Movi(v17.V2D(), 0x00000001ffffffff, 0x00000001ffffffff);
@@ -17044,9 +17694,9 @@ TEST(neon_3diff_sqdmlal) {
   __ Movi(v20.V2D(), 0, 0x00000001);
   __ Movi(v21.V2D(), 0, 0x00000001);
 
-  __ Sqdmlal(v16.V4S(),  v0.V4H(), v1.V4H());
+  __ Sqdmlal(v16.V4S(), v0.V4H(), v1.V4H());
   __ Sqdmlal2(v17.V4S(), v0.V8H(), v1.V8H());
-  __ Sqdmlal(v18.V2D(),  v2.V2S(), v3.V2S());
+  __ Sqdmlal(v18.V2D(), v2.V2S(), v3.V2S());
   __ Sqdmlal2(v19.V2D(), v2.V4S(), v3.V4S());
   __ Sqdmlal(s20, h0, h1);
   __ Sqdmlal(d21, s2, s3);
@@ -17069,10 +17719,10 @@ TEST(neon_3diff_sqdmlsl) {
 
   START();
 
-  __ Movi(v0.V2D(),  0x7fff7fff80008000, 0x80007fff7fff8000);
-  __ Movi(v1.V2D(),  0x80007fff7fff8000, 0x7fff7fff80008000);
-  __ Movi(v2.V2D(),  0x800000007fffffff, 0x7fffffff80000000);
-  __ Movi(v3.V2D(),  0x8000000080000000, 0x8000000080000000);
+  __ Movi(v0.V2D(), 0x7fff7fff80008000, 0x80007fff7fff8000);
+  __ Movi(v1.V2D(), 0x80007fff7fff8000, 0x7fff7fff80008000);
+  __ Movi(v2.V2D(), 0x800000007fffffff, 0x7fffffff80000000);
+  __ Movi(v3.V2D(), 0x8000000080000000, 0x8000000080000000);
 
   __ Movi(v16.V2D(), 0xffffffff00000001, 0x7ffffffe80000001);
   __ Movi(v17.V2D(), 0x00000001ffffffff, 0x7ffffffe00000001);
@@ -17081,9 +17731,9 @@ TEST(neon_3diff_sqdmlsl) {
   __ Movi(v20.V2D(), 0, 0x00000001);
   __ Movi(v21.V2D(), 0, 0x00000001);
 
-  __ Sqdmlsl(v16.V4S(),  v0.V4H(), v1.V4H());
+  __ Sqdmlsl(v16.V4S(), v0.V4H(), v1.V4H());
   __ Sqdmlsl2(v17.V4S(), v0.V8H(), v1.V8H());
-  __ Sqdmlsl(v18.V2D(),  v2.V2S(), v3.V2S());
+  __ Sqdmlsl(v18.V2D(), v2.V2S(), v3.V2S());
   __ Sqdmlsl2(v19.V2D(), v2.V4S(), v3.V4S());
   __ Sqdmlsl(s20, h0, h1);
   __ Sqdmlsl(d21, s2, s3);
@@ -17107,8 +17757,8 @@ TEST(neon_3diff_mla) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55ab, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000055aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55ab, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000055aaff55ff00, 0xaa55ff55555500ff);
   __ Movi(v16.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v17.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v18.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
@@ -17135,8 +17785,8 @@ TEST(neon_3diff_mls) {
 
   START();
 
-  __ Movi(v0.V2D(),  0xff00aa5500ff55ab, 0xff00aa5500ff55aa);
-  __ Movi(v1.V2D(),  0x000055aaff55ff00, 0xaa55ff55555500ff);
+  __ Movi(v0.V2D(), 0xff00aa5500ff55ab, 0xff00aa5500ff55aa);
+  __ Movi(v1.V2D(), 0x000055aaff55ff00, 0xaa55ff55555500ff);
   __ Movi(v16.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v17.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
   __ Movi(v18.V2D(), 0x0102030405060708, 0x090a0b0c0d0e0f00);
@@ -17432,15 +18082,15 @@ TEST(neon_2regmisc_cmeq) {
   __ Movi(v0.V2D(), 0x0001000200030004, 0x0000000000000000);
   __ Movi(v1.V2D(), 0x000055aaff55ff00, 0x0000ff55555500ff);
 
-  __ Cmeq(v16.V8B(),  v1.V8B(),  0);
+  __ Cmeq(v16.V8B(), v1.V8B(), 0);
   __ Cmeq(v17.V16B(), v1.V16B(), 0);
-  __ Cmeq(v18.V4H(),  v1.V4H(),  0);
-  __ Cmeq(v19.V8H(),  v1.V8H(),  0);
-  __ Cmeq(v20.V2S(),  v0.V2S(),  0);
-  __ Cmeq(v21.V4S(),  v0.V4S(),  0);
-  __ Cmeq(d22,  d0,  0);
-  __ Cmeq(d23,  d1,  0);
-  __ Cmeq(v24.V2D(),  v0.V2D(),  0);
+  __ Cmeq(v18.V4H(), v1.V4H(), 0);
+  __ Cmeq(v19.V8H(), v1.V8H(), 0);
+  __ Cmeq(v20.V2S(), v0.V2S(), 0);
+  __ Cmeq(v21.V4S(), v0.V4S(), 0);
+  __ Cmeq(d22, d0, 0);
+  __ Cmeq(d23, d1, 0);
+  __ Cmeq(v24.V2D(), v0.V2D(), 0);
 
   END();
 
@@ -17466,15 +18116,15 @@ TEST(neon_2regmisc_cmge) {
   __ Movi(v0.V2D(), 0xff01000200030004, 0x0000000000000000);
   __ Movi(v1.V2D(), 0x000055aaff55ff00, 0x0000ff55555500ff);
 
-  __ Cmge(v16.V8B(),  v1.V8B(),  0);
+  __ Cmge(v16.V8B(), v1.V8B(), 0);
   __ Cmge(v17.V16B(), v1.V16B(), 0);
-  __ Cmge(v18.V4H(),  v1.V4H(),  0);
-  __ Cmge(v19.V8H(),  v1.V8H(),  0);
-  __ Cmge(v20.V2S(),  v0.V2S(),  0);
-  __ Cmge(v21.V4S(),  v0.V4S(),  0);
-  __ Cmge(d22,  d0,  0);
-  __ Cmge(d23,  d1,  0);
-  __ Cmge(v24.V2D(),  v0.V2D(),  0);
+  __ Cmge(v18.V4H(), v1.V4H(), 0);
+  __ Cmge(v19.V8H(), v1.V8H(), 0);
+  __ Cmge(v20.V2S(), v0.V2S(), 0);
+  __ Cmge(v21.V4S(), v0.V4S(), 0);
+  __ Cmge(d22, d0, 0);
+  __ Cmge(d23, d1, 0);
+  __ Cmge(v24.V2D(), v0.V2D(), 0);
 
   END();
 
@@ -17500,15 +18150,15 @@ TEST(neon_2regmisc_cmlt) {
   __ Movi(v0.V2D(), 0x0001000200030004, 0xff00000000000000);
   __ Movi(v1.V2D(), 0x000055aaff55ff00, 0x0000ff55555500ff);
 
-  __ Cmlt(v16.V8B(),  v1.V8B(),  0);
+  __ Cmlt(v16.V8B(), v1.V8B(), 0);
   __ Cmlt(v17.V16B(), v1.V16B(), 0);
-  __ Cmlt(v18.V4H(),  v1.V4H(),  0);
-  __ Cmlt(v19.V8H(),  v1.V8H(),  0);
-  __ Cmlt(v20.V2S(),  v1.V2S(),  0);
-  __ Cmlt(v21.V4S(),  v1.V4S(),  0);
-  __ Cmlt(d22,  d0,  0);
-  __ Cmlt(d23,  d1,  0);
-  __ Cmlt(v24.V2D(),  v0.V2D(),  0);
+  __ Cmlt(v18.V4H(), v1.V4H(), 0);
+  __ Cmlt(v19.V8H(), v1.V8H(), 0);
+  __ Cmlt(v20.V2S(), v1.V2S(), 0);
+  __ Cmlt(v21.V4S(), v1.V4S(), 0);
+  __ Cmlt(d22, d0, 0);
+  __ Cmlt(d23, d1, 0);
+  __ Cmlt(v24.V2D(), v0.V2D(), 0);
 
   END();
 
@@ -17534,15 +18184,15 @@ TEST(neon_2regmisc_cmle) {
   __ Movi(v0.V2D(), 0x0001000200030004, 0x0000000000000000);
   __ Movi(v1.V2D(), 0x000055aaff55ff00, 0x0000ff55555500ff);
 
-  __ Cmle(v16.V8B(),  v1.V8B(),  0);
+  __ Cmle(v16.V8B(), v1.V8B(), 0);
   __ Cmle(v17.V16B(), v1.V16B(), 0);
-  __ Cmle(v18.V4H(),  v1.V4H(),  0);
-  __ Cmle(v19.V8H(),  v1.V8H(),  0);
-  __ Cmle(v20.V2S(),  v1.V2S(),  0);
-  __ Cmle(v21.V4S(),  v1.V4S(),  0);
-  __ Cmle(d22,  d0,  0);
-  __ Cmle(d23,  d1,  0);
-  __ Cmle(v24.V2D(),  v0.V2D(),  0);
+  __ Cmle(v18.V4H(), v1.V4H(), 0);
+  __ Cmle(v19.V8H(), v1.V8H(), 0);
+  __ Cmle(v20.V2S(), v1.V2S(), 0);
+  __ Cmle(v21.V4S(), v1.V4S(), 0);
+  __ Cmle(d22, d0, 0);
+  __ Cmle(d23, d1, 0);
+  __ Cmle(v24.V2D(), v0.V2D(), 0);
 
   END();
 
@@ -17568,15 +18218,15 @@ TEST(neon_2regmisc_cmgt) {
   __ Movi(v0.V2D(), 0x0001000200030004, 0x0000000000000000);
   __ Movi(v1.V2D(), 0x000055aaff55ff00, 0x0000ff55555500ff);
 
-  __ Cmgt(v16.V8B(),  v1.V8B(),  0);
+  __ Cmgt(v16.V8B(), v1.V8B(), 0);
   __ Cmgt(v17.V16B(), v1.V16B(), 0);
-  __ Cmgt(v18.V4H(),  v1.V4H(),  0);
-  __ Cmgt(v19.V8H(),  v1.V8H(),  0);
-  __ Cmgt(v20.V2S(),  v0.V2S(),  0);
-  __ Cmgt(v21.V4S(),  v0.V4S(),  0);
-  __ Cmgt(d22,  d0,  0);
-  __ Cmgt(d23,  d1,  0);
-  __ Cmgt(v24.V2D(),  v0.V2D(),  0);
+  __ Cmgt(v18.V4H(), v1.V4H(), 0);
+  __ Cmgt(v19.V8H(), v1.V8H(), 0);
+  __ Cmgt(v20.V2S(), v0.V2S(), 0);
+  __ Cmgt(v21.V4S(), v0.V4S(), 0);
+  __ Cmgt(d22, d0, 0);
+  __ Cmgt(d23, d1, 0);
+  __ Cmgt(v24.V2D(), v0.V2D(), 0);
 
   END();
 
@@ -17605,15 +18255,15 @@ TEST(neon_2regmisc_neg) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Neg(v16.V8B(),  v0.V8B());
+  __ Neg(v16.V8B(), v0.V8B());
   __ Neg(v17.V16B(), v0.V16B());
-  __ Neg(v18.V4H(),  v1.V4H());
-  __ Neg(v19.V8H(),  v1.V8H());
-  __ Neg(v20.V2S(),  v2.V2S());
-  __ Neg(v21.V4S(),  v2.V4S());
+  __ Neg(v18.V4H(), v1.V4H());
+  __ Neg(v19.V8H(), v1.V8H());
+  __ Neg(v20.V2S(), v2.V2S());
+  __ Neg(v21.V4S(), v2.V4S());
   __ Neg(d22, d3);
-  __ Neg(v23.V2D(),  v3.V2D());
-  __ Neg(v24.V2D(),  v4.V2D());
+  __ Neg(v23.V2D(), v3.V2D());
+  __ Neg(v24.V2D(), v4.V2D());
 
   END();
 
@@ -17643,14 +18293,14 @@ TEST(neon_2regmisc_sqneg) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqneg(v16.V8B(),  v0.V8B());
+  __ Sqneg(v16.V8B(), v0.V8B());
   __ Sqneg(v17.V16B(), v0.V16B());
-  __ Sqneg(v18.V4H(),  v1.V4H());
-  __ Sqneg(v19.V8H(),  v1.V8H());
-  __ Sqneg(v20.V2S(),  v2.V2S());
-  __ Sqneg(v21.V4S(),  v2.V4S());
-  __ Sqneg(v22.V2D(),  v3.V2D());
-  __ Sqneg(v23.V2D(),  v4.V2D());
+  __ Sqneg(v18.V4H(), v1.V4H());
+  __ Sqneg(v19.V8H(), v1.V8H());
+  __ Sqneg(v20.V2S(), v2.V2S());
+  __ Sqneg(v21.V4S(), v2.V4S());
+  __ Sqneg(v22.V2D(), v3.V2D());
+  __ Sqneg(v23.V2D(), v4.V2D());
 
   __ Sqneg(b24, b0);
   __ Sqneg(h25, h1);
@@ -17689,15 +18339,15 @@ TEST(neon_2regmisc_abs) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Abs(v16.V8B(),  v0.V8B());
+  __ Abs(v16.V8B(), v0.V8B());
   __ Abs(v17.V16B(), v0.V16B());
-  __ Abs(v18.V4H(),  v1.V4H());
-  __ Abs(v19.V8H(),  v1.V8H());
-  __ Abs(v20.V2S(),  v2.V2S());
-  __ Abs(v21.V4S(),  v2.V4S());
+  __ Abs(v18.V4H(), v1.V4H());
+  __ Abs(v19.V8H(), v1.V8H());
+  __ Abs(v20.V2S(), v2.V2S());
+  __ Abs(v21.V4S(), v2.V4S());
   __ Abs(d22, d3);
-  __ Abs(v23.V2D(),  v3.V2D());
-  __ Abs(v24.V2D(),  v4.V2D());
+  __ Abs(v23.V2D(), v3.V2D());
+  __ Abs(v24.V2D(), v4.V2D());
 
   END();
 
@@ -17727,14 +18377,14 @@ TEST(neon_2regmisc_sqabs) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqabs(v16.V8B(),  v0.V8B());
+  __ Sqabs(v16.V8B(), v0.V8B());
   __ Sqabs(v17.V16B(), v0.V16B());
-  __ Sqabs(v18.V4H(),  v1.V4H());
-  __ Sqabs(v19.V8H(),  v1.V8H());
-  __ Sqabs(v20.V2S(),  v2.V2S());
-  __ Sqabs(v21.V4S(),  v2.V4S());
-  __ Sqabs(v22.V2D(),  v3.V2D());
-  __ Sqabs(v23.V2D(),  v4.V2D());
+  __ Sqabs(v18.V4H(), v1.V4H());
+  __ Sqabs(v19.V8H(), v1.V8H());
+  __ Sqabs(v20.V2S(), v2.V2S());
+  __ Sqabs(v21.V4S(), v2.V4S());
+  __ Sqabs(v22.V2D(), v3.V2D());
+  __ Sqabs(v23.V2D(), v4.V2D());
 
   __ Sqabs(b24, b0);
   __ Sqabs(h25, h1);
@@ -17955,12 +18605,12 @@ TEST(neon_2regmisc_xtn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Xtn(v16.V8B(),   v0.V8H());
+  __ Xtn(v16.V8B(), v0.V8H());
   __ Xtn2(v16.V16B(), v1.V8H());
-  __ Xtn(v17.V4H(),   v1.V4S());
-  __ Xtn2(v17.V8H(),  v2.V4S());
-  __ Xtn(v18.V2S(),   v3.V2D());
-  __ Xtn2(v18.V4S(),  v4.V2D());
+  __ Xtn(v17.V4H(), v1.V4S());
+  __ Xtn2(v17.V8H(), v2.V4S());
+  __ Xtn(v18.V2S(), v3.V2D());
+  __ Xtn2(v18.V4S(), v4.V2D());
 
   END();
 
@@ -17983,15 +18633,15 @@ TEST(neon_2regmisc_sqxtn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqxtn(v16.V8B(),   v0.V8H());
+  __ Sqxtn(v16.V8B(), v0.V8H());
   __ Sqxtn2(v16.V16B(), v1.V8H());
-  __ Sqxtn(v17.V4H(),   v1.V4S());
-  __ Sqxtn2(v17.V8H(),  v2.V4S());
-  __ Sqxtn(v18.V2S(),   v3.V2D());
-  __ Sqxtn2(v18.V4S(),  v4.V2D());
-  __ Sqxtn(b19,  h0);
-  __ Sqxtn(h20,  s0);
-  __ Sqxtn(s21,  d0);
+  __ Sqxtn(v17.V4H(), v1.V4S());
+  __ Sqxtn2(v17.V8H(), v2.V4S());
+  __ Sqxtn(v18.V2S(), v3.V2D());
+  __ Sqxtn2(v18.V4S(), v4.V2D());
+  __ Sqxtn(b19, h0);
+  __ Sqxtn(h20, s0);
+  __ Sqxtn(s21, d0);
 
   END();
 
@@ -18017,15 +18667,15 @@ TEST(neon_2regmisc_uqxtn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Uqxtn(v16.V8B(),   v0.V8H());
+  __ Uqxtn(v16.V8B(), v0.V8H());
   __ Uqxtn2(v16.V16B(), v1.V8H());
-  __ Uqxtn(v17.V4H(),   v1.V4S());
-  __ Uqxtn2(v17.V8H(),  v2.V4S());
-  __ Uqxtn(v18.V2S(),   v3.V2D());
-  __ Uqxtn2(v18.V4S(),  v4.V2D());
-  __ Uqxtn(b19,  h0);
-  __ Uqxtn(h20,  s0);
-  __ Uqxtn(s21,  d0);
+  __ Uqxtn(v17.V4H(), v1.V4S());
+  __ Uqxtn2(v17.V8H(), v2.V4S());
+  __ Uqxtn(v18.V2S(), v3.V2D());
+  __ Uqxtn2(v18.V4S(), v4.V2D());
+  __ Uqxtn(b19, h0);
+  __ Uqxtn(h20, s0);
+  __ Uqxtn(s21, d0);
 
   END();
 
@@ -18051,15 +18701,15 @@ TEST(neon_2regmisc_sqxtun) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqxtun(v16.V8B(),   v0.V8H());
+  __ Sqxtun(v16.V8B(), v0.V8H());
   __ Sqxtun2(v16.V16B(), v1.V8H());
-  __ Sqxtun(v17.V4H(),   v1.V4S());
-  __ Sqxtun2(v17.V8H(),  v2.V4S());
-  __ Sqxtun(v18.V2S(),   v3.V2D());
-  __ Sqxtun2(v18.V4S(),  v4.V2D());
-  __ Sqxtun(b19,  h0);
-  __ Sqxtun(h20,  s0);
-  __ Sqxtun(s21,  d0);
+  __ Sqxtun(v17.V4H(), v1.V4S());
+  __ Sqxtun2(v17.V8H(), v2.V4S());
+  __ Sqxtun(v18.V2S(), v3.V2D());
+  __ Sqxtun2(v18.V4S(), v4.V2D());
+  __ Sqxtun(b19, h0);
+  __ Sqxtun(h20, s0);
+  __ Sqxtun(s21, d0);
 
   END();
 
@@ -18083,8 +18733,8 @@ TEST(neon_3same_and) {
 
   __ And(v16.V16B(), v0.V16B(), v0.V16B());  // self test
   __ And(v17.V16B(), v0.V16B(), v1.V16B());  // all combinations
-  __ And(v24.V8B(), v0.V8B(), v0.V8B());  // self test
-  __ And(v25.V8B(), v0.V8B(), v1.V8B());  // all combinations
+  __ And(v24.V8B(), v0.V8B(), v0.V8B());     // self test
+  __ And(v25.V8B(), v0.V8B(), v1.V8B());     // all combinations
   END();
 
   RUN();
@@ -18105,8 +18755,8 @@ TEST(neon_3same_bic) {
 
   __ Bic(v16.V16B(), v0.V16B(), v0.V16B());  // self test
   __ Bic(v17.V16B(), v0.V16B(), v1.V16B());  // all combinations
-  __ Bic(v24.V8B(), v0.V8B(), v0.V8B());  // self test
-  __ Bic(v25.V8B(), v0.V8B(), v1.V8B());  // all combinations
+  __ Bic(v24.V8B(), v0.V8B(), v0.V8B());     // self test
+  __ Bic(v25.V8B(), v0.V8B(), v1.V8B());     // all combinations
   END();
 
   RUN();
@@ -18127,8 +18777,8 @@ TEST(neon_3same_orr) {
 
   __ Orr(v16.V16B(), v0.V16B(), v0.V16B());  // self test
   __ Orr(v17.V16B(), v0.V16B(), v1.V16B());  // all combinations
-  __ Orr(v24.V8B(), v0.V8B(), v0.V8B());  // self test
-  __ Orr(v25.V8B(), v0.V8B(), v1.V8B());  // all combinations
+  __ Orr(v24.V8B(), v0.V8B(), v0.V8B());     // self test
+  __ Orr(v25.V8B(), v0.V8B(), v1.V8B());     // all combinations
   END();
 
   RUN();
@@ -18180,8 +18830,8 @@ TEST(neon_3same_orn) {
 
   __ Orn(v16.V16B(), v0.V16B(), v0.V16B());  // self test
   __ Orn(v17.V16B(), v0.V16B(), v1.V16B());  // all combinations
-  __ Orn(v24.V8B(), v0.V8B(), v0.V8B());  // self test
-  __ Orn(v25.V8B(), v0.V8B(), v1.V8B());  // all combinations
+  __ Orn(v24.V8B(), v0.V8B(), v0.V8B());     // self test
+  __ Orn(v25.V8B(), v0.V8B(), v1.V8B());     // all combinations
   END();
 
   RUN();
@@ -18202,8 +18852,8 @@ TEST(neon_3same_eor) {
 
   __ Eor(v16.V16B(), v0.V16B(), v0.V16B());  // self test
   __ Eor(v17.V16B(), v0.V16B(), v1.V16B());  // all combinations
-  __ Eor(v24.V8B(), v0.V8B(), v0.V8B());  // self test
-  __ Eor(v25.V8B(), v0.V8B(), v1.V8B());  // all combinations
+  __ Eor(v24.V8B(), v0.V8B(), v0.V8B());     // self test
+  __ Eor(v25.V8B(), v0.V8B(), v1.V8B());     // all combinations
   END();
 
   RUN();
@@ -18727,21 +19377,21 @@ TEST(neon_2regmisc_cls_clz_cnt) {
   __ Movi(v0.V2D(), 0x0001020304050607, 0x08090a0b0c0d0e0f);
   __ Movi(v1.V2D(), 0xfedcba9876543210, 0x0123456789abcdef);
 
-  __ Cls(v16.V8B() , v1.V8B());
+  __ Cls(v16.V8B(), v1.V8B());
   __ Cls(v17.V16B(), v1.V16B());
-  __ Cls(v18.V4H() , v1.V4H());
-  __ Cls(v19.V8H() , v1.V8H());
-  __ Cls(v20.V2S() , v1.V2S());
-  __ Cls(v21.V4S() , v1.V4S());
+  __ Cls(v18.V4H(), v1.V4H());
+  __ Cls(v19.V8H(), v1.V8H());
+  __ Cls(v20.V2S(), v1.V2S());
+  __ Cls(v21.V4S(), v1.V4S());
 
-  __ Clz(v22.V8B() , v0.V8B());
+  __ Clz(v22.V8B(), v0.V8B());
   __ Clz(v23.V16B(), v0.V16B());
-  __ Clz(v24.V4H() , v0.V4H());
-  __ Clz(v25.V8H() , v0.V8H());
-  __ Clz(v26.V2S() , v0.V2S());
-  __ Clz(v27.V4S() , v0.V4S());
+  __ Clz(v24.V4H(), v0.V4H());
+  __ Clz(v25.V8H(), v0.V8H());
+  __ Clz(v26.V2S(), v0.V2S());
+  __ Clz(v27.V4S(), v0.V4S());
 
-  __ Cnt(v28.V8B() , v0.V8B());
+  __ Cnt(v28.V8B(), v0.V8B());
   __ Cnt(v29.V16B(), v1.V16B());
 
   END();
@@ -18776,22 +19426,22 @@ TEST(neon_2regmisc_rev) {
   __ Movi(v0.V2D(), 0x0001020304050607, 0x08090a0b0c0d0e0f);
   __ Movi(v1.V2D(), 0xfedcba9876543210, 0x0123456789abcdef);
 
-  __ Rev16(v16.V8B() , v0.V8B());
+  __ Rev16(v16.V8B(), v0.V8B());
   __ Rev16(v17.V16B(), v0.V16B());
 
-  __ Rev32(v18.V8B() , v0.V8B());
+  __ Rev32(v18.V8B(), v0.V8B());
   __ Rev32(v19.V16B(), v0.V16B());
-  __ Rev32(v20.V4H() , v0.V4H());
-  __ Rev32(v21.V8H() , v0.V8H());
+  __ Rev32(v20.V4H(), v0.V4H());
+  __ Rev32(v21.V8H(), v0.V8H());
 
-  __ Rev64(v22.V8B() , v0.V8B());
+  __ Rev64(v22.V8B(), v0.V8B());
   __ Rev64(v23.V16B(), v0.V16B());
-  __ Rev64(v24.V4H() , v0.V4H());
-  __ Rev64(v25.V8H() , v0.V8H());
-  __ Rev64(v26.V2S() , v0.V2S());
-  __ Rev64(v27.V4S() , v0.V4S());
+  __ Rev64(v24.V4H(), v0.V4H());
+  __ Rev64(v25.V8H(), v0.V8H());
+  __ Rev64(v26.V2S(), v0.V2S());
+  __ Rev64(v27.V4S(), v0.V4S());
 
-  __ Rbit(v28.V8B() , v1.V8B());
+  __ Rbit(v28.V8B(), v1.V8B());
   __ Rbit(v29.V16B(), v1.V16B());
 
   END();
@@ -18828,24 +19478,24 @@ TEST(neon_sli) {
   __ Movi(v0.V2D(), 0x0001020304050607, 0x08090a0b0c0d0e0f);
   __ Movi(v1.V2D(), 0xfedcba9876543210, 0x0123456789abcdef);
 
-  __ Mov(v16.V2D(),  v0.V2D());
-  __ Mov(v17.V2D(),  v0.V2D());
-  __ Mov(v18.V2D(),  v0.V2D());
-  __ Mov(v19.V2D(),  v0.V2D());
-  __ Mov(v20.V2D(),  v0.V2D());
-  __ Mov(v21.V2D(),  v0.V2D());
-  __ Mov(v22.V2D(),  v0.V2D());
-  __ Mov(v23.V2D(),  v0.V2D());
+  __ Mov(v16.V2D(), v0.V2D());
+  __ Mov(v17.V2D(), v0.V2D());
+  __ Mov(v18.V2D(), v0.V2D());
+  __ Mov(v19.V2D(), v0.V2D());
+  __ Mov(v20.V2D(), v0.V2D());
+  __ Mov(v21.V2D(), v0.V2D());
+  __ Mov(v22.V2D(), v0.V2D());
+  __ Mov(v23.V2D(), v0.V2D());
 
-  __ Sli(v16.V8B(),  v1.V8B(),  4);
+  __ Sli(v16.V8B(), v1.V8B(), 4);
   __ Sli(v17.V16B(), v1.V16B(), 7);
-  __ Sli(v18.V4H(),  v1.V4H(),  8);
-  __ Sli(v19.V8H(),  v1.V8H(), 15);
-  __ Sli(v20.V2S(),  v1.V2S(),  0);
-  __ Sli(v21.V4S(),  v1.V4S(), 31);
-  __ Sli(v22.V2D(),  v1.V2D(), 48);
+  __ Sli(v18.V4H(), v1.V4H(), 8);
+  __ Sli(v19.V8H(), v1.V8H(), 15);
+  __ Sli(v20.V2S(), v1.V2S(), 0);
+  __ Sli(v21.V4S(), v1.V4S(), 31);
+  __ Sli(v22.V2D(), v1.V2D(), 48);
 
-  __ Sli(d23,  d1, 48);
+  __ Sli(d23, d1, 48);
 
   END();
 
@@ -18874,24 +19524,24 @@ TEST(neon_sri) {
   __ Movi(v0.V2D(), 0x0001020304050607, 0x08090a0b0c0d0e0f);
   __ Movi(v1.V2D(), 0xfedcba9876543210, 0x0123456789abcdef);
 
-  __ Mov(v16.V2D(),  v0.V2D());
-  __ Mov(v17.V2D(),  v0.V2D());
-  __ Mov(v18.V2D(),  v0.V2D());
-  __ Mov(v19.V2D(),  v0.V2D());
-  __ Mov(v20.V2D(),  v0.V2D());
-  __ Mov(v21.V2D(),  v0.V2D());
-  __ Mov(v22.V2D(),  v0.V2D());
-  __ Mov(v23.V2D(),  v0.V2D());
+  __ Mov(v16.V2D(), v0.V2D());
+  __ Mov(v17.V2D(), v0.V2D());
+  __ Mov(v18.V2D(), v0.V2D());
+  __ Mov(v19.V2D(), v0.V2D());
+  __ Mov(v20.V2D(), v0.V2D());
+  __ Mov(v21.V2D(), v0.V2D());
+  __ Mov(v22.V2D(), v0.V2D());
+  __ Mov(v23.V2D(), v0.V2D());
 
-  __ Sri(v16.V8B(),  v1.V8B(),  4);
+  __ Sri(v16.V8B(), v1.V8B(), 4);
   __ Sri(v17.V16B(), v1.V16B(), 7);
-  __ Sri(v18.V4H(),  v1.V4H(),  8);
-  __ Sri(v19.V8H(),  v1.V8H(), 15);
-  __ Sri(v20.V2S(),  v1.V2S(),  1);
-  __ Sri(v21.V4S(),  v1.V4S(), 31);
-  __ Sri(v22.V2D(),  v1.V2D(), 48);
+  __ Sri(v18.V4H(), v1.V4H(), 8);
+  __ Sri(v19.V8H(), v1.V8H(), 15);
+  __ Sri(v20.V2S(), v1.V2S(), 1);
+  __ Sri(v21.V4S(), v1.V4S(), 31);
+  __ Sri(v22.V2D(), v1.V2D(), 48);
 
-  __ Sri(d23,  d1, 48);
+  __ Sri(d23, d1, 48);
 
   END();
 
@@ -18923,12 +19573,12 @@ TEST(neon_shrn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Shrn(v16.V8B(),   v0.V8H(), 8);
+  __ Shrn(v16.V8B(), v0.V8H(), 8);
   __ Shrn2(v16.V16B(), v1.V8H(), 1);
-  __ Shrn(v17.V4H(),   v1.V4S(), 16);
-  __ Shrn2(v17.V8H(),  v2.V4S(), 1);
-  __ Shrn(v18.V2S(),   v3.V2D(), 32);
-  __ Shrn2(v18.V4S(),  v3.V2D(), 1);
+  __ Shrn(v17.V4H(), v1.V4S(), 16);
+  __ Shrn2(v17.V8H(), v2.V4S(), 1);
+  __ Shrn(v18.V2S(), v3.V2D(), 32);
+  __ Shrn2(v18.V4S(), v3.V2D(), 1);
 
   END();
 
@@ -18951,12 +19601,12 @@ TEST(neon_rshrn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Rshrn(v16.V8B(),   v0.V8H(), 8);
+  __ Rshrn(v16.V8B(), v0.V8H(), 8);
   __ Rshrn2(v16.V16B(), v1.V8H(), 1);
-  __ Rshrn(v17.V4H(),   v1.V4S(), 16);
-  __ Rshrn2(v17.V8H(),  v2.V4S(), 1);
-  __ Rshrn(v18.V2S(),   v3.V2D(), 32);
-  __ Rshrn2(v18.V4S(),  v3.V2D(), 1);
+  __ Rshrn(v17.V4H(), v1.V4S(), 16);
+  __ Rshrn2(v17.V8H(), v2.V4S(), 1);
+  __ Rshrn(v18.V2S(), v3.V2D(), 32);
+  __ Rshrn2(v18.V4S(), v3.V2D(), 1);
 
   END();
 
@@ -18979,12 +19629,12 @@ TEST(neon_uqshrn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Uqshrn(v16.V8B(),   v0.V8H(), 8);
+  __ Uqshrn(v16.V8B(), v0.V8H(), 8);
   __ Uqshrn2(v16.V16B(), v1.V8H(), 1);
-  __ Uqshrn(v17.V4H(),   v1.V4S(), 16);
-  __ Uqshrn2(v17.V8H(),  v2.V4S(), 1);
-  __ Uqshrn(v18.V2S(),   v3.V2D(), 32);
-  __ Uqshrn2(v18.V4S(),  v3.V2D(), 1);
+  __ Uqshrn(v17.V4H(), v1.V4S(), 16);
+  __ Uqshrn2(v17.V8H(), v2.V4S(), 1);
+  __ Uqshrn(v18.V2S(), v3.V2D(), 32);
+  __ Uqshrn2(v18.V4S(), v3.V2D(), 1);
 
   __ Uqshrn(b19, h0, 8);
   __ Uqshrn(h20, s1, 16);
@@ -19014,12 +19664,12 @@ TEST(neon_uqrshrn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Uqrshrn(v16.V8B(),   v0.V8H(), 8);
+  __ Uqrshrn(v16.V8B(), v0.V8H(), 8);
   __ Uqrshrn2(v16.V16B(), v1.V8H(), 1);
-  __ Uqrshrn(v17.V4H(),   v1.V4S(), 16);
-  __ Uqrshrn2(v17.V8H(),  v2.V4S(), 1);
-  __ Uqrshrn(v18.V2S(),   v3.V2D(), 32);
-  __ Uqrshrn2(v18.V4S(),  v3.V2D(), 1);
+  __ Uqrshrn(v17.V4H(), v1.V4S(), 16);
+  __ Uqrshrn2(v17.V8H(), v2.V4S(), 1);
+  __ Uqrshrn(v18.V2S(), v3.V2D(), 32);
+  __ Uqrshrn2(v18.V4S(), v3.V2D(), 1);
 
   __ Uqrshrn(b19, h0, 8);
   __ Uqrshrn(h20, s1, 16);
@@ -19049,12 +19699,12 @@ TEST(neon_sqshrn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqshrn(v16.V8B(),   v0.V8H(), 8);
+  __ Sqshrn(v16.V8B(), v0.V8H(), 8);
   __ Sqshrn2(v16.V16B(), v1.V8H(), 1);
-  __ Sqshrn(v17.V4H(),   v1.V4S(), 16);
-  __ Sqshrn2(v17.V8H(),  v2.V4S(), 1);
-  __ Sqshrn(v18.V2S(),   v3.V2D(), 32);
-  __ Sqshrn2(v18.V4S(),  v3.V2D(), 1);
+  __ Sqshrn(v17.V4H(), v1.V4S(), 16);
+  __ Sqshrn2(v17.V8H(), v2.V4S(), 1);
+  __ Sqshrn(v18.V2S(), v3.V2D(), 32);
+  __ Sqshrn2(v18.V4S(), v3.V2D(), 1);
 
   __ Sqshrn(b19, h0, 8);
   __ Sqshrn(h20, s1, 16);
@@ -19084,12 +19734,12 @@ TEST(neon_sqrshrn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqrshrn(v16.V8B(),   v0.V8H(), 8);
+  __ Sqrshrn(v16.V8B(), v0.V8H(), 8);
   __ Sqrshrn2(v16.V16B(), v1.V8H(), 1);
-  __ Sqrshrn(v17.V4H(),   v1.V4S(), 16);
-  __ Sqrshrn2(v17.V8H(),  v2.V4S(), 1);
-  __ Sqrshrn(v18.V2S(),   v3.V2D(), 32);
-  __ Sqrshrn2(v18.V4S(),  v3.V2D(), 1);
+  __ Sqrshrn(v17.V4H(), v1.V4S(), 16);
+  __ Sqrshrn2(v17.V8H(), v2.V4S(), 1);
+  __ Sqrshrn(v18.V2S(), v3.V2D(), 32);
+  __ Sqrshrn2(v18.V4S(), v3.V2D(), 1);
 
   __ Sqrshrn(b19, h0, 8);
   __ Sqrshrn(h20, s1, 16);
@@ -19119,12 +19769,12 @@ TEST(neon_sqshrun) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqshrun(v16.V8B(),   v0.V8H(), 8);
+  __ Sqshrun(v16.V8B(), v0.V8H(), 8);
   __ Sqshrun2(v16.V16B(), v1.V8H(), 1);
-  __ Sqshrun(v17.V4H(),   v1.V4S(), 16);
-  __ Sqshrun2(v17.V8H(),  v2.V4S(), 1);
-  __ Sqshrun(v18.V2S(),   v3.V2D(), 32);
-  __ Sqshrun2(v18.V4S(),  v3.V2D(), 1);
+  __ Sqshrun(v17.V4H(), v1.V4S(), 16);
+  __ Sqshrun2(v17.V8H(), v2.V4S(), 1);
+  __ Sqshrun(v18.V2S(), v3.V2D(), 32);
+  __ Sqshrun2(v18.V4S(), v3.V2D(), 1);
 
   __ Sqshrun(b19, h0, 8);
   __ Sqshrun(h20, s1, 16);
@@ -19154,12 +19804,12 @@ TEST(neon_sqrshrun) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Sqrshrun(v16.V8B(),   v0.V8H(), 8);
+  __ Sqrshrun(v16.V8B(), v0.V8H(), 8);
   __ Sqrshrun2(v16.V16B(), v1.V8H(), 1);
-  __ Sqrshrun(v17.V4H(),   v1.V4S(), 16);
-  __ Sqrshrun2(v17.V8H(),  v2.V4S(), 1);
-  __ Sqrshrun(v18.V2S(),   v3.V2D(), 32);
-  __ Sqrshrun2(v18.V4S(),  v3.V2D(), 1);
+  __ Sqrshrun(v17.V4H(), v1.V4S(), 16);
+  __ Sqrshrun2(v17.V8H(), v2.V4S(), 1);
+  __ Sqrshrun(v18.V2S(), v3.V2D(), 32);
+  __ Sqrshrun2(v18.V4S(), v3.V2D(), 1);
 
   __ Sqrshrun(b19, h0, 8);
   __ Sqrshrun(h20, s1, 16);
@@ -19344,10 +19994,10 @@ TEST(neon_modimm_movi) {
 
   START();
 
-  __ Movi(v0.V8B(),  0xaa);
+  __ Movi(v0.V8B(), 0xaa);
   __ Movi(v1.V16B(), 0x55);
 
-  __ Movi(d2,       0x00ffff0000ffffff);
+  __ Movi(d2, 0x00ffff0000ffffff);
   __ Movi(v3.V2D(), 0x00ffff0000ffffff);
 
   __ Movi(v16.V4H(), 0x00, LSL, 0);
@@ -19614,9 +20264,9 @@ TEST(neon_copy_dup_element) {
   __ Movi(v5.V2D(), 0x0011223344556677, 0x0123456789abcdef);
 
   __ Dup(v16.V16B(), v0.B(), 0);
-  __ Dup(v17.V8H(),  v1.H(), 7);
-  __ Dup(v18.V4S(),  v1.S(), 3);
-  __ Dup(v19.V2D(),  v0.D(), 0);
+  __ Dup(v17.V8H(), v1.H(), 7);
+  __ Dup(v18.V4S(), v1.S(), 3);
+  __ Dup(v19.V2D(), v0.D(), 0);
 
   __ Dup(v20.V8B(), v0.B(), 0);
   __ Dup(v21.V4H(), v1.H(), 7);
@@ -19628,9 +20278,9 @@ TEST(neon_copy_dup_element) {
   __ Dup(v26.D(), v0.D(), 0);
 
   __ Dup(v2.V16B(), v2.B(), 0);
-  __ Dup(v3.V8H(),  v3.H(), 7);
-  __ Dup(v4.V4S(),  v4.S(), 0);
-  __ Dup(v5.V2D(),  v5.D(), 1);
+  __ Dup(v3.V8H(), v3.H(), 7);
+  __ Dup(v4.V4S(), v4.S(), 0);
+  __ Dup(v5.V2D(), v5.D(), 1);
 
   END();
 
@@ -19666,18 +20316,18 @@ TEST(neon_copy_dup_general) {
   __ Mov(x0, 0x0011223344556677);
 
   __ Dup(v16.V16B(), w0);
-  __ Dup(v17.V8H(),  w0);
-  __ Dup(v18.V4S(),  w0);
-  __ Dup(v19.V2D(),  x0);
+  __ Dup(v17.V8H(), w0);
+  __ Dup(v18.V4S(), w0);
+  __ Dup(v19.V2D(), x0);
 
   __ Dup(v20.V8B(), w0);
   __ Dup(v21.V4H(), w0);
   __ Dup(v22.V2S(), w0);
 
   __ Dup(v2.V16B(), wzr);
-  __ Dup(v3.V8H(),  wzr);
-  __ Dup(v4.V4S(),  wzr);
-  __ Dup(v5.V2D(),  xzr);
+  __ Dup(v3.V8H(), wzr);
+  __ Dup(v4.V4S(), wzr);
+  __ Dup(v5.V2D(), xzr);
 
   END();
 
@@ -19705,8 +20355,8 @@ TEST(neon_copy_ins_element) {
 
   START();
 
-  __ Movi(v0.V2D(),  0x0011223344556677, 0x8899aabbccddeeff);
-  __ Movi(v1.V2D(),  0xffeddccbbaae9988, 0x7766554433221100);
+  __ Movi(v0.V2D(), 0x0011223344556677, 0x8899aabbccddeeff);
+  __ Movi(v1.V2D(), 0xffeddccbbaae9988, 0x7766554433221100);
   __ Movi(v16.V2D(), 0x0123456789abcdef, 0xfedcba9876543210);
   __ Movi(v17.V2D(), 0xfedcba9876543210, 0x0123456789abcdef);
   __ Movi(v18.V2D(), 0x0011223344556677, 0x8899aabbccddeeff);
@@ -19718,14 +20368,14 @@ TEST(neon_copy_ins_element) {
   __ Movi(v5.V2D(), 0, 0x0123456789abcdef);
 
   __ Ins(v16.V16B(), 15, v0.V16B(), 0);
-  __ Ins(v17.V8H(),  0,  v1.V8H(), 7);
-  __ Ins(v18.V4S(),  3,  v1.V4S(), 0);
-  __ Ins(v19.V2D(),  1,  v0.V2D(), 0);
+  __ Ins(v17.V8H(), 0, v1.V8H(), 7);
+  __ Ins(v18.V4S(), 3, v1.V4S(), 0);
+  __ Ins(v19.V2D(), 1, v0.V2D(), 0);
 
   __ Ins(v2.V16B(), 2, v2.V16B(), 0);
-  __ Ins(v3.V8H(),  0,  v3.V8H(), 7);
-  __ Ins(v4.V4S(),  3,  v4.V4S(), 0);
-  __ Ins(v5.V2D(),  0,  v5.V2D(), 1);
+  __ Ins(v3.V8H(), 0, v3.V8H(), 7);
+  __ Ins(v4.V4S(), 3, v4.V4S(), 0);
+  __ Ins(v5.V2D(), 0, v5.V2D(), 1);
 
   END();
 
@@ -19749,8 +20399,8 @@ TEST(neon_copy_mov_element) {
 
   START();
 
-  __ Movi(v0.V2D(),  0x0011223344556677, 0x8899aabbccddeeff);
-  __ Movi(v1.V2D(),  0xffeddccbbaae9988, 0x7766554433221100);
+  __ Movi(v0.V2D(), 0x0011223344556677, 0x8899aabbccddeeff);
+  __ Movi(v1.V2D(), 0xffeddccbbaae9988, 0x7766554433221100);
   __ Movi(v16.V2D(), 0x0123456789abcdef, 0xfedcba9876543210);
   __ Movi(v17.V2D(), 0xfedcba9876543210, 0x0123456789abcdef);
   __ Movi(v18.V2D(), 0x0011223344556677, 0x8899aabbccddeeff);
@@ -19762,14 +20412,14 @@ TEST(neon_copy_mov_element) {
   __ Movi(v5.V2D(), 0, 0x0123456789abcdef);
 
   __ Mov(v16.V16B(), 15, v0.V16B(), 0);
-  __ Mov(v17.V8H(),  0,  v1.V8H(), 7);
-  __ Mov(v18.V4S(),  3,  v1.V4S(), 0);
-  __ Mov(v19.V2D(),  1,  v0.V2D(), 0);
+  __ Mov(v17.V8H(), 0, v1.V8H(), 7);
+  __ Mov(v18.V4S(), 3, v1.V4S(), 0);
+  __ Mov(v19.V2D(), 1, v0.V2D(), 0);
 
   __ Mov(v2.V16B(), 2, v2.V16B(), 0);
-  __ Mov(v3.V8H(),  0,  v3.V8H(), 7);
-  __ Mov(v4.V4S(),  3,  v4.V4S(), 0);
-  __ Mov(v5.V2D(),  0,  v5.V2D(), 1);
+  __ Mov(v3.V8H(), 0, v3.V8H(), 7);
+  __ Mov(v4.V4S(), 3, v4.V4S(), 0);
+  __ Mov(v5.V2D(), 0, v5.V2D(), 1);
 
   END();
 
@@ -19795,20 +20445,20 @@ TEST(neon_copy_smov) {
 
   __ Movi(v0.V2D(), 0x0123456789abcdef, 0xfedcba9876543210);
 
-  __ Smov(w0, v0.B(),  7);
+  __ Smov(w0, v0.B(), 7);
   __ Smov(w1, v0.B(), 15);
 
-  __ Smov(w2, v0.H(),  0);
-  __ Smov(w3, v0.H(),  3);
+  __ Smov(w2, v0.H(), 0);
+  __ Smov(w3, v0.H(), 3);
 
-  __ Smov(x4, v0.B(),  7);
-  __ Smov(x5, v0.B(),  15);
+  __ Smov(x4, v0.B(), 7);
+  __ Smov(x5, v0.B(), 15);
 
-  __ Smov(x6, v0.H(),  0);
-  __ Smov(x7, v0.H(),  3);
+  __ Smov(x6, v0.H(), 0);
+  __ Smov(x7, v0.H(), 3);
 
-  __ Smov(x16, v0.S(),  0);
-  __ Smov(x17, v0.S(),  1);
+  __ Smov(x16, v0.S(), 0);
+  __ Smov(x17, v0.S(), 1);
 
   END();
 
@@ -19837,12 +20487,12 @@ TEST(neon_copy_umov_mov) {
   __ Movi(v0.V2D(), 0x0123456789abcdef, 0xfedcba9876543210);
 
   __ Umov(w0, v0.B(), 15);
-  __ Umov(w1, v0.H(),  0);
-  __ Umov(w2, v0.S(),  3);
-  __ Umov(x3, v0.D(),  1);
+  __ Umov(w1, v0.H(), 0);
+  __ Umov(w2, v0.S(), 3);
+  __ Umov(x3, v0.D(), 1);
 
-  __ Mov(w4, v0.S(),  3);
-  __ Mov(x5, v0.D(),  1);
+  __ Mov(w4, v0.S(), 3);
+  __ Mov(x5, v0.D(), 1);
 
   END();
 
@@ -19876,14 +20526,14 @@ TEST(neon_copy_ins_general) {
   __ Movi(v5.V2D(), 0, 0x0123456789abcdef);
 
   __ Ins(v16.V16B(), 15, w0);
-  __ Ins(v17.V8H(),  0,  w0);
-  __ Ins(v18.V4S(),  3,  w0);
-  __ Ins(v19.V2D(),  0,  x0);
+  __ Ins(v17.V8H(), 0, w0);
+  __ Ins(v18.V4S(), 3, w0);
+  __ Ins(v19.V2D(), 0, x0);
 
   __ Ins(v2.V16B(), 2, w0);
-  __ Ins(v3.V8H(),  0, w0);
-  __ Ins(v4.V4S(),  3, w0);
-  __ Ins(v5.V2D(),  1, x0);
+  __ Ins(v3.V8H(), 0, w0);
+  __ Ins(v4.V4S(), 3, w0);
+  __ Ins(v5.V2D(), 1, x0);
 
   END();
 
@@ -19920,8 +20570,8 @@ TEST(neon_extract_ext) {
 
   __ Ext(v18.V8B(), v2.V8B(), v3.V8B(), 0);
   __ Ext(v19.V8B(), v2.V8B(), v3.V8B(), 7);
-  __ Ext(v2.V8B(), v2.V8B(), v3.V8B(), 4);     // Dest is same as one Src
-  __ Ext(v3.V8B(), v3.V8B(), v3.V8B(), 4);     // All reg are the same
+  __ Ext(v2.V8B(), v2.V8B(), v3.V8B(), 4);  // Dest is same as one Src
+  __ Ext(v3.V8B(), v3.V8B(), v3.V8B(), 4);  // All reg are the same
 
   END();
 
@@ -19994,13 +20644,13 @@ TEST(neon_3different_addhn_subhn) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Addhn(v16.V8B(),   v0.V8H(), v1.V8H());
+  __ Addhn(v16.V8B(), v0.V8H(), v1.V8H());
   __ Addhn2(v16.V16B(), v2.V8H(), v3.V8H());
-  __ Raddhn(v17.V8B(),   v0.V8H(), v1.V8H());
+  __ Raddhn(v17.V8B(), v0.V8H(), v1.V8H());
   __ Raddhn2(v17.V16B(), v2.V8H(), v3.V8H());
-  __ Subhn(v18.V8B(),   v0.V8H(), v1.V8H());
+  __ Subhn(v18.V8B(), v0.V8H(), v1.V8H());
   __ Subhn2(v18.V16B(), v2.V8H(), v3.V8H());
-  __ Rsubhn(v19.V8B(),   v0.V8H(), v1.V8H());
+  __ Rsubhn(v19.V8B(), v0.V8H(), v1.V8H());
   __ Rsubhn2(v19.V16B(), v2.V8H(), v3.V8H());
 
   END();
@@ -20243,14 +20893,14 @@ TEST(neon_sshll) {
   __ Movi(v1.V2D(), 0x80008001ffff0000, 0xffff000000017fff);
   __ Movi(v2.V2D(), 0x80000000ffffffff, 0x000000007fffffff);
 
-  __ Sshll(v16.V8H(), v0.V8B(),  4);
+  __ Sshll(v16.V8H(), v0.V8B(), 4);
   __ Sshll2(v17.V8H(), v0.V16B(), 4);
 
-  __ Sshll(v18.V4S(),  v1.V4H(), 8);
-  __ Sshll2(v19.V4S(),  v1.V8H(), 8);
+  __ Sshll(v18.V4S(), v1.V4H(), 8);
+  __ Sshll2(v19.V4S(), v1.V8H(), 8);
 
-  __ Sshll(v20.V2D(),  v2.V2S(), 16);
-  __ Sshll2(v21.V2D(),  v2.V4S(), 16);
+  __ Sshll(v20.V2D(), v2.V2S(), 16);
+  __ Sshll2(v21.V2D(), v2.V4S(), 16);
 
   END();
 
@@ -20274,14 +20924,14 @@ TEST(neon_shll) {
   __ Movi(v1.V2D(), 0x80008001ffff0000, 0xffff000000017fff);
   __ Movi(v2.V2D(), 0x80000000ffffffff, 0x000000007fffffff);
 
-  __ Shll(v16.V8H(), v0.V8B(),  8);
+  __ Shll(v16.V8H(), v0.V8B(), 8);
   __ Shll2(v17.V8H(), v0.V16B(), 8);
 
-  __ Shll(v18.V4S(),  v1.V4H(), 16);
-  __ Shll2(v19.V4S(),  v1.V8H(), 16);
+  __ Shll(v18.V4S(), v1.V4H(), 16);
+  __ Shll2(v19.V4S(), v1.V8H(), 16);
 
-  __ Shll(v20.V2D(),  v2.V2S(), 32);
-  __ Shll2(v21.V2D(),  v2.V4S(), 32);
+  __ Shll(v20.V2D(), v2.V2S(), 32);
+  __ Shll2(v21.V2D(), v2.V4S(), 32);
 
   END();
 
@@ -20305,14 +20955,14 @@ TEST(neon_ushll) {
   __ Movi(v1.V2D(), 0x80008001ffff0000, 0xffff000000017fff);
   __ Movi(v2.V2D(), 0x80000000ffffffff, 0x000000007fffffff);
 
-  __ Ushll(v16.V8H(), v0.V8B(),  4);
+  __ Ushll(v16.V8H(), v0.V8B(), 4);
   __ Ushll2(v17.V8H(), v0.V16B(), 4);
 
-  __ Ushll(v18.V4S(),  v1.V4H(), 8);
-  __ Ushll2(v19.V4S(),  v1.V8H(), 8);
+  __ Ushll(v18.V4S(), v1.V4H(), 8);
+  __ Ushll2(v19.V4S(), v1.V8H(), 8);
 
-  __ Ushll(v20.V2D(),  v2.V2S(), 16);
-  __ Ushll2(v21.V2D(),  v2.V4S(), 16);
+  __ Ushll(v20.V2D(), v2.V2S(), 16);
+  __ Ushll2(v21.V2D(), v2.V4S(), 16);
 
   END();
 
@@ -20340,11 +20990,11 @@ TEST(neon_sxtl) {
   __ Sxtl(v16.V8H(), v0.V8B());
   __ Sxtl2(v17.V8H(), v0.V16B());
 
-  __ Sxtl(v18.V4S(),  v1.V4H());
-  __ Sxtl2(v19.V4S(),  v1.V8H());
+  __ Sxtl(v18.V4S(), v1.V4H());
+  __ Sxtl2(v19.V4S(), v1.V8H());
 
-  __ Sxtl(v20.V2D(),  v2.V2S());
-  __ Sxtl2(v21.V2D(),  v2.V4S());
+  __ Sxtl(v20.V2D(), v2.V2S());
+  __ Sxtl2(v21.V2D(), v2.V4S());
 
   END();
 
@@ -20372,11 +21022,11 @@ TEST(neon_uxtl) {
   __ Uxtl(v16.V8H(), v0.V8B());
   __ Uxtl2(v17.V8H(), v0.V16B());
 
-  __ Uxtl(v18.V4S(),  v1.V4H());
-  __ Uxtl2(v19.V4S(),  v1.V8H());
+  __ Uxtl(v18.V4S(), v1.V4H());
+  __ Uxtl2(v19.V4S(), v1.V8H());
 
-  __ Uxtl(v20.V2D(),  v2.V2S());
-  __ Uxtl2(v21.V2D(),  v2.V4S());
+  __ Uxtl(v20.V2D(), v2.V2S());
+  __ Uxtl2(v21.V2D(), v2.V4S());
 
   END();
 
@@ -20403,30 +21053,30 @@ TEST(neon_ssra) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Mov(v16.V2D(),   v0.V2D());
-  __ Mov(v17.V2D(),   v0.V2D());
-  __ Mov(v18.V2D(),   v1.V2D());
-  __ Mov(v19.V2D(),   v1.V2D());
-  __ Mov(v20.V2D(),   v2.V2D());
-  __ Mov(v21.V2D(),   v2.V2D());
-  __ Mov(v22.V2D(),   v3.V2D());
-  __ Mov(v23.V2D(),   v4.V2D());
-  __ Mov(v24.V2D(),   v3.V2D());
-  __ Mov(v25.V2D(),   v4.V2D());
+  __ Mov(v16.V2D(), v0.V2D());
+  __ Mov(v17.V2D(), v0.V2D());
+  __ Mov(v18.V2D(), v1.V2D());
+  __ Mov(v19.V2D(), v1.V2D());
+  __ Mov(v20.V2D(), v2.V2D());
+  __ Mov(v21.V2D(), v2.V2D());
+  __ Mov(v22.V2D(), v3.V2D());
+  __ Mov(v23.V2D(), v4.V2D());
+  __ Mov(v24.V2D(), v3.V2D());
+  __ Mov(v25.V2D(), v4.V2D());
 
-  __ Ssra(v16.V8B(),  v0.V8B(),  4);
+  __ Ssra(v16.V8B(), v0.V8B(), 4);
   __ Ssra(v17.V16B(), v0.V16B(), 4);
 
-  __ Ssra(v18.V4H(),  v1.V4H(), 8);
-  __ Ssra(v19.V8H(),  v1.V8H(), 8);
+  __ Ssra(v18.V4H(), v1.V4H(), 8);
+  __ Ssra(v19.V8H(), v1.V8H(), 8);
 
-  __ Ssra(v20.V2S(),  v2.V2S(), 16);
-  __ Ssra(v21.V4S(),  v2.V4S(), 16);
+  __ Ssra(v20.V2S(), v2.V2S(), 16);
+  __ Ssra(v21.V4S(), v2.V4S(), 16);
 
-  __ Ssra(v22.V2D(),  v3.V2D(), 32);
-  __ Ssra(v23.V2D(),  v4.V2D(), 32);
+  __ Ssra(v22.V2D(), v3.V2D(), 32);
+  __ Ssra(v23.V2D(), v4.V2D(), 32);
 
-  __ Ssra(d24,  d3, 48);
+  __ Ssra(d24, d3, 48);
 
   END();
 
@@ -20455,30 +21105,30 @@ TEST(neon_srsra) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Mov(v16.V2D(),   v0.V2D());
-  __ Mov(v17.V2D(),   v0.V2D());
-  __ Mov(v18.V2D(),   v1.V2D());
-  __ Mov(v19.V2D(),   v1.V2D());
-  __ Mov(v20.V2D(),   v2.V2D());
-  __ Mov(v21.V2D(),   v2.V2D());
-  __ Mov(v22.V2D(),   v3.V2D());
-  __ Mov(v23.V2D(),   v4.V2D());
-  __ Mov(v24.V2D(),   v3.V2D());
-  __ Mov(v25.V2D(),   v4.V2D());
+  __ Mov(v16.V2D(), v0.V2D());
+  __ Mov(v17.V2D(), v0.V2D());
+  __ Mov(v18.V2D(), v1.V2D());
+  __ Mov(v19.V2D(), v1.V2D());
+  __ Mov(v20.V2D(), v2.V2D());
+  __ Mov(v21.V2D(), v2.V2D());
+  __ Mov(v22.V2D(), v3.V2D());
+  __ Mov(v23.V2D(), v4.V2D());
+  __ Mov(v24.V2D(), v3.V2D());
+  __ Mov(v25.V2D(), v4.V2D());
 
-  __ Srsra(v16.V8B(),  v0.V8B(),  4);
+  __ Srsra(v16.V8B(), v0.V8B(), 4);
   __ Srsra(v17.V16B(), v0.V16B(), 4);
 
-  __ Srsra(v18.V4H(),  v1.V4H(), 8);
-  __ Srsra(v19.V8H(),  v1.V8H(), 8);
+  __ Srsra(v18.V4H(), v1.V4H(), 8);
+  __ Srsra(v19.V8H(), v1.V8H(), 8);
 
-  __ Srsra(v20.V2S(),  v2.V2S(), 16);
-  __ Srsra(v21.V4S(),  v2.V4S(), 16);
+  __ Srsra(v20.V2S(), v2.V2S(), 16);
+  __ Srsra(v21.V4S(), v2.V4S(), 16);
 
-  __ Srsra(v22.V2D(),  v3.V2D(), 32);
-  __ Srsra(v23.V2D(),  v4.V2D(), 32);
+  __ Srsra(v22.V2D(), v3.V2D(), 32);
+  __ Srsra(v23.V2D(), v4.V2D(), 32);
 
-  __ Srsra(d24,  d3, 48);
+  __ Srsra(d24, d3, 48);
 
   END();
 
@@ -20508,30 +21158,30 @@ TEST(neon_usra) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Mov(v16.V2D(),   v0.V2D());
-  __ Mov(v17.V2D(),   v0.V2D());
-  __ Mov(v18.V2D(),   v1.V2D());
-  __ Mov(v19.V2D(),   v1.V2D());
-  __ Mov(v20.V2D(),   v2.V2D());
-  __ Mov(v21.V2D(),   v2.V2D());
-  __ Mov(v22.V2D(),   v3.V2D());
-  __ Mov(v23.V2D(),   v4.V2D());
-  __ Mov(v24.V2D(),   v3.V2D());
-  __ Mov(v25.V2D(),   v4.V2D());
+  __ Mov(v16.V2D(), v0.V2D());
+  __ Mov(v17.V2D(), v0.V2D());
+  __ Mov(v18.V2D(), v1.V2D());
+  __ Mov(v19.V2D(), v1.V2D());
+  __ Mov(v20.V2D(), v2.V2D());
+  __ Mov(v21.V2D(), v2.V2D());
+  __ Mov(v22.V2D(), v3.V2D());
+  __ Mov(v23.V2D(), v4.V2D());
+  __ Mov(v24.V2D(), v3.V2D());
+  __ Mov(v25.V2D(), v4.V2D());
 
-  __ Usra(v16.V8B(),  v0.V8B(),  4);
+  __ Usra(v16.V8B(), v0.V8B(), 4);
   __ Usra(v17.V16B(), v0.V16B(), 4);
 
-  __ Usra(v18.V4H(),  v1.V4H(), 8);
-  __ Usra(v19.V8H(),  v1.V8H(), 8);
+  __ Usra(v18.V4H(), v1.V4H(), 8);
+  __ Usra(v19.V8H(), v1.V8H(), 8);
 
-  __ Usra(v20.V2S(),  v2.V2S(), 16);
-  __ Usra(v21.V4S(),  v2.V4S(), 16);
+  __ Usra(v20.V2S(), v2.V2S(), 16);
+  __ Usra(v21.V4S(), v2.V4S(), 16);
 
-  __ Usra(v22.V2D(),  v3.V2D(), 32);
-  __ Usra(v23.V2D(),  v4.V2D(), 32);
+  __ Usra(v22.V2D(), v3.V2D(), 32);
+  __ Usra(v23.V2D(), v4.V2D(), 32);
 
-  __ Usra(d24,  d3, 48);
+  __ Usra(d24, d3, 48);
 
   END();
 
@@ -20561,30 +21211,30 @@ TEST(neon_ursra) {
   __ Movi(v3.V2D(), 0x8000000000000001, 0x7fffffffffffffff);
   __ Movi(v4.V2D(), 0x8000000000000000, 0x0000000000000000);
 
-  __ Mov(v16.V2D(),   v0.V2D());
-  __ Mov(v17.V2D(),   v0.V2D());
-  __ Mov(v18.V2D(),   v1.V2D());
-  __ Mov(v19.V2D(),   v1.V2D());
-  __ Mov(v20.V2D(),   v2.V2D());
-  __ Mov(v21.V2D(),   v2.V2D());
-  __ Mov(v22.V2D(),   v3.V2D());
-  __ Mov(v23.V2D(),   v4.V2D());
-  __ Mov(v24.V2D(),   v3.V2D());
-  __ Mov(v25.V2D(),   v4.V2D());
+  __ Mov(v16.V2D(), v0.V2D());
+  __ Mov(v17.V2D(), v0.V2D());
+  __ Mov(v18.V2D(), v1.V2D());
+  __ Mov(v19.V2D(), v1.V2D());
+  __ Mov(v20.V2D(), v2.V2D());
+  __ Mov(v21.V2D(), v2.V2D());
+  __ Mov(v22.V2D(), v3.V2D());
+  __ Mov(v23.V2D(), v4.V2D());
+  __ Mov(v24.V2D(), v3.V2D());
+  __ Mov(v25.V2D(), v4.V2D());
 
-  __ Ursra(v16.V8B(),  v0.V8B(),  4);
+  __ Ursra(v16.V8B(), v0.V8B(), 4);
   __ Ursra(v17.V16B(), v0.V16B(), 4);
 
-  __ Ursra(v18.V4H(),  v1.V4H(), 8);
-  __ Ursra(v19.V8H(),  v1.V8H(), 8);
+  __ Ursra(v18.V4H(), v1.V4H(), 8);
+  __ Ursra(v19.V8H(), v1.V8H(), 8);
 
-  __ Ursra(v20.V2S(),  v2.V2S(), 16);
-  __ Ursra(v21.V4S(),  v2.V4S(), 16);
+  __ Ursra(v20.V2S(), v2.V2S(), 16);
+  __ Ursra(v21.V4S(), v2.V4S(), 16);
 
-  __ Ursra(v22.V2D(),  v3.V2D(), 32);
-  __ Ursra(v23.V2D(),  v4.V2D(), 32);
+  __ Ursra(v22.V2D(), v3.V2D(), 32);
+  __ Ursra(v23.V2D(), v4.V2D(), 32);
 
-  __ Ursra(d24,  d3, 48);
+  __ Ursra(d24, d3, 48);
 
   END();
 
@@ -21161,7 +21811,7 @@ TEST(crc32b) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0x5f058808, x11);
   ASSERT_EQUAL_64(0x5f058808, x12);
   ASSERT_EQUAL_64(0xedb88320, x13);
@@ -21203,7 +21853,7 @@ TEST(crc32h) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0x0e848dba, x11);
   ASSERT_EQUAL_64(0x0e848dba, x12);
   ASSERT_EQUAL_64(0x3b83984b, x13);
@@ -21241,7 +21891,7 @@ TEST(crc32w) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0x1d937b81, x11);
   ASSERT_EQUAL_64(0xed59b63b, x13);
   ASSERT_EQUAL_64(0x00be2612, x14);
@@ -21278,7 +21928,7 @@ TEST(crc32x) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0x40797b92, x11);
   ASSERT_EQUAL_64(0x533b85da, x13);
   ASSERT_EQUAL_64(0xbc962670, x14);
@@ -21319,7 +21969,7 @@ TEST(crc32cb) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0x4851927d, x11);
   ASSERT_EQUAL_64(0x4851927d, x12);
   ASSERT_EQUAL_64(0x82f63b78, x13);
@@ -21361,7 +22011,7 @@ TEST(crc32ch) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0xcef8494c, x11);
   ASSERT_EQUAL_64(0xcef8494c, x12);
   ASSERT_EQUAL_64(0xfbc3faf9, x13);
@@ -21399,7 +22049,7 @@ TEST(crc32cw) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0xbcb79ece, x11);
   ASSERT_EQUAL_64(0x52a0c93f, x13);
   ASSERT_EQUAL_64(0x9f9b5c7a, x14);
@@ -21436,7 +22086,7 @@ TEST(crc32cx) {
   END();
   RUN();
 
-  ASSERT_EQUAL_64(0x0,        x10);
+  ASSERT_EQUAL_64(0x0, x10);
   ASSERT_EQUAL_64(0x7f320fcb, x11);
   ASSERT_EQUAL_64(0x34019664, x13);
   ASSERT_EQUAL_64(0x6cc27dd0, x14);
@@ -21801,10 +22451,12 @@ TEST(far_branch_backward) {
   // that are outside the immediate range of branch instructions.
   // Take into account that backward branches can reach one instruction further
   // than forward branches.
-  const int overflow_size = kInstructionSize +
-    std::max(Instruction::GetImmBranchForwardRange(TestBranchType),
-             std::max(Instruction::GetImmBranchForwardRange(CompareBranchType),
-                      Instruction::GetImmBranchForwardRange(CondBranchType)));
+  const int overflow_size =
+      kInstructionSize +
+      std::max(Instruction::GetImmBranchForwardRange(TestBranchType),
+               std::max(Instruction::GetImmBranchForwardRange(
+                            CompareBranchType),
+                        Instruction::GetImmBranchForwardRange(CondBranchType)));
 
   SETUP();
   START();
@@ -21917,9 +22569,10 @@ TEST(simple_veneers) {
   // Test that the MacroAssembler correctly emits veneers for forward branches
   // to labels that are outside the immediate range of branch instructions.
   const int max_range =
-    std::max(Instruction::GetImmBranchForwardRange(TestBranchType),
-             std::max(Instruction::GetImmBranchForwardRange(CompareBranchType),
-                      Instruction::GetImmBranchForwardRange(CondBranchType)));
+      std::max(Instruction::GetImmBranchForwardRange(TestBranchType),
+               std::max(Instruction::GetImmBranchForwardRange(
+                            CompareBranchType),
+                        Instruction::GetImmBranchForwardRange(CondBranchType)));
 
   SETUP();
   START();
@@ -22084,7 +22737,7 @@ TEST(veneers_hanging) {
   // We use different labels to prevent the MacroAssembler from sharing veneers.
   Label labels[kNTotalBranches];
   for (int i = 0; i < kNTotalBranches; i++) {
-    new(&labels[i]) Label();
+    new (&labels[i]) Label();
   }
 
   for (int i = 0; i < n_bcond; i++) {
@@ -22202,10 +22855,7 @@ TEST(ldr_literal_explicit) {
   Literal<int64_t> automatically_placed_literal(1, masm.GetLiteralPool());
   Literal<int64_t> manually_placed_literal(2);
   {
-    CodeBufferCheckScope scope(&masm,
-                               kInstructionSize + sizeof(int64_t),
-                               CodeBufferCheckScope::kReserveBufferSpace,
-                               CodeBufferCheckScope::kExactSize);
+    ExactAssemblyScope scope(&masm, kInstructionSize + sizeof(int64_t));
     Label over_literal;
     __ b(&over_literal);
     __ place(&manually_placed_literal);
@@ -22401,11 +23051,16 @@ TEST(generic_operand_helpers) {
 TEST(generic_operand) {
   SETUP();
 
-  int32_t data_32_array[5] = {
-    0xbadbeef, 0x11111111, 0xbadbeef, 0x33333333, 0xbadbeef };
-  int64_t data_64_array[5] = {
-    INT64_C(0xbadbadbadbeef), INT64_C(0x1111111111111111),
-    INT64_C(0xbadbadbadbeef), INT64_C(0x3333333333333333), INT64_C(0xbadbadbadbeef) };
+  int32_t data_32_array[5] = {0xbadbeef,
+                              0x11111111,
+                              0xbadbeef,
+                              0x33333333,
+                              0xbadbeef};
+  int64_t data_64_array[5] = {INT64_C(0xbadbadbadbeef),
+                              INT64_C(0x1111111111111111),
+                              INT64_C(0xbadbadbadbeef),
+                              INT64_C(0x3333333333333333),
+                              INT64_C(0xbadbadbadbeef)};
   size_t size_32 = sizeof(data_32_array[0]);
   size_t size_64 = sizeof(data_64_array[0]);
 
@@ -22478,9 +23133,7 @@ TEST(generic_operand) {
 }
 
 
-int32_t runtime_call_add_one(int32_t a) {
-  return a + 1;
-}
+int32_t runtime_call_add_one(int32_t a) { return a + 1; }
 
 double runtime_call_add_doubles(double a, double b, double c) {
   return a + b + c;
@@ -22511,9 +23164,7 @@ double runtime_call_two_arguments_on_stack(int64_t arg1 __attribute__((unused)),
   return arg9 - arg10;
 }
 
-void runtime_call_store_at_address(int64_t* address) {
-  *address = 0xf00d;
-}
+void runtime_call_store_at_address(int64_t* address) { *address = 0xf00d; }
 
 // Test feature detection of calls to runtime functions.
 
@@ -22522,12 +23173,14 @@ void runtime_call_store_at_address(int64_t* address) {
 #if defined(VIXL_INCLUDE_SIMULATOR_AARCH64) && (__cplusplus >= 201103L) && \
     (defined(__clang__) || GCC_VERSION_OR_NEWER(4, 9, 1)) &&               \
     !defined(VIXL_HAS_SIMULATED_RUNTIME_CALL_SUPPORT)
-#error "C++11 should be sufficient to provide support for simulated runtime calls."
+#error \
+    "C++11 should be sufficient to provide support for simulated runtime calls."
 #endif  // #if defined(VIXL_INCLUDE_SIMULATOR_AARCH64) && ...
 
 #if (__cplusplus >= 201103L) && \
     !defined(VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT)
-#error "C++11 should be sufficient to provide support for `MacroAssembler::CallRuntime()`."
+#error \
+    "C++11 should be sufficient to provide support for `MacroAssembler::CallRuntime()`."
 #endif  // #if (__cplusplus >= 201103L) && ...
 
 #ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
@@ -22621,6 +23274,45 @@ TEST(nop) {
   VIXL_CHECK(masm.GetSizeOfCodeGeneratedSince(&start) >= kInstructionSize);
 
   masm.FinalizeCode();
+}
+
+
+TEST(static_register_types) {
+  SETUP();
+  START();
+
+  // [WX]Register implicitly casts to Register.
+  XRegister x_x0(0);
+  WRegister w_w0(0);
+  Register r_x0 = x_x0;
+  Register r_w0 = w_w0;
+  VIXL_CHECK(r_x0.Is(x_x0));
+  VIXL_CHECK(x_x0.Is(r_x0));
+  VIXL_CHECK(r_w0.Is(w_w0));
+  VIXL_CHECK(w_w0.Is(r_w0));
+
+  // Register explicitly casts to [WX]Register.
+  Register r_x1(1, kXRegSize);
+  Register r_w1(1, kWRegSize);
+  XRegister x_x1(r_x1);
+  WRegister w_w1(r_w1);
+  VIXL_CHECK(r_x1.Is(x_x1));
+  VIXL_CHECK(x_x1.Is(r_x1));
+  VIXL_CHECK(r_w1.Is(w_w1));
+  VIXL_CHECK(w_w1.Is(r_w1));
+
+  // [WX]Register implicitly casts to CPURegister.
+  XRegister x_x2(2);
+  WRegister w_w2(2);
+  CPURegister cpu_x2 = x_x2;
+  CPURegister cpu_w2 = w_w2;
+  VIXL_CHECK(cpu_x2.Is(x_x2));
+  VIXL_CHECK(x_x2.Is(cpu_x2));
+  VIXL_CHECK(cpu_w2.Is(w_w2));
+  VIXL_CHECK(w_w2.Is(cpu_w2));
+
+  END();
+  TEARDOWN();
 }
 
 
