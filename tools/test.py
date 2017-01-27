@@ -221,6 +221,10 @@ def BuildOptions():
                                  and run only with one compiler, in one mode,
                                  with one C++ standard, and with an appropriate
                                  default for runtime options.''')
+  general_arguments.add_argument('--dry-run', action='store_true',
+                                 help='''Don't actually build or run anything,
+                                 but print the configurations that would be
+                                 tested.''')
   general_arguments.add_argument(
     '--jobs', '-j', metavar='N', type=int, nargs='?',
     default=multiprocessing.cpu_count(),
@@ -438,11 +442,11 @@ if __name__ == '__main__':
     SetFast(build_option_mode, args.mode, 'debug')
     SetFast(runtime_option_debugger, args.debugger, 'on')
 
-  if not args.nolint and not args.fast:
+  if not args.nolint and not (args.fast or args.dry_run):
     rc |= RunLinter()
     MaybeExitEarly(rc)
 
-  if not args.noclang_format and not args.fast:
+  if not args.noclang_format and not (args.fast or args.dry_run):
     rc |= RunClangFormat()
     MaybeExitEarly(rc)
 
@@ -460,22 +464,33 @@ if __name__ == '__main__':
     ]
     return list(itertools.product(*opts_list))
   # List combinations of options that should only be tested independently.
-  def ListIndependentCombinations(args, options):
+  def ListIndependentCombinations(args, options, base):
     n = []
     for opt in options:
       if opt.test_independently:
         for o in opt.ArgList(args.__dict__[opt.name]):
-          n.append((o,))
+          n.append(base + (o,))
     return n
   # TODO: We should refine the configurations we test by default, instead of
   #       always testing all possible combinations.
   test_env_combinations = ListCombinations(args, test_environment_options)
   test_build_combinations = ListCombinations(args, test_build_options)
-  test_build_combinations.extend(ListIndependentCombinations(args, test_build_options))
+  if not args.fast:
+    test_build_combinations.extend(
+        ListIndependentCombinations(args,
+                                    test_build_options,
+                                    test_build_combinations[0]))
   test_runtime_combinations = ListCombinations(args, test_runtime_options)
 
   for environment_options in test_env_combinations:
     for build_options in test_build_combinations:
+      if (args.dry_run):
+        for runtime_options in test_runtime_combinations:
+          print(' '.join(filter(None, environment_options)) + ', ' +
+                ' '.join(filter(None, build_options)) + ', ' +
+                ' '.join(filter(None, runtime_options)))
+        continue
+
       # Avoid going through the build stage if we are not using the build
       # result.
       if not (args.notest and args.nobench):
@@ -509,6 +524,7 @@ if __name__ == '__main__':
         rc |= RunBenchmarks(build_options, args)
         MaybeExitEarly(rc)
 
-  PrintStatus(rc == 0)
+  if not args.dry_run:
+    PrintStatus(rc == 0)
 
   sys.exit(rc)

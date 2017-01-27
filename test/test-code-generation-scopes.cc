@@ -34,13 +34,13 @@
 #include "aarch64/macro-assembler-aarch64.h"
 #endif
 
-#define TEST(name)  TEST_(SCOPES_##name)
+#define TEST(name) TEST_(SCOPES_##name)
 
 #ifdef VIXL_INCLUDE_TARGET_A32
-#define TEST_A32(name)  TEST(name)
+#define TEST_A32(name) TEST(name)
 #else
 // Do not add this test to the harness.
-#define TEST_A32(name)  void Test##name()
+#define TEST_A32(name) void Test##name()
 #endif
 
 #define __ masm.
@@ -337,7 +337,7 @@ TEST(EmissionCheckScope_Open_Close_64) {
 
 #ifdef VIXL_INCLUDE_TARGET_AARCH32
 
-#define ASSERT_LITERAL_POOL_SIZE_32(expected)                                  \
+#define ASSERT_LITERAL_POOL_SIZE_32(expected) \
   VIXL_CHECK((expected) == masm.GetLiteralPoolSize())
 
 TEST_A32(EmissionCheckScope_emit_pool_32) {
@@ -378,9 +378,9 @@ TEST_A32(EmissionCheckScope_emit_pool_32) {
 
 #ifdef VIXL_INCLUDE_TARGET_AARCH64
 
-#define ASSERT_LITERAL_POOL_SIZE_64(expected)                                  \
-  VIXL_CHECK(                                                                  \
-      (expected + aarch64::kInstructionSize) == masm.GetLiteralPoolSize())
+#define ASSERT_LITERAL_POOL_SIZE_64(expected)          \
+  VIXL_CHECK((expected + aarch64::kInstructionSize) == \
+             masm.GetLiteralPoolSize())
 
 TEST(EmissionCheckScope_emit_pool_64) {
   aarch64::MacroAssembler masm;
@@ -553,7 +553,7 @@ TEST_A32(ExactAssemblyScope_Close_32) {
   aarch32::MacroAssembler masm;
 
   {
-    CodeBufferCheckScope scope(&masm, aarch32::kA32InstructionSizeInBytes);
+    ExactAssemblyScope scope(&masm, aarch32::kA32InstructionSizeInBytes);
     __ mov(aarch32::r0, 0);
     scope.Close();
     __ Mov(aarch32::r1, 1);
@@ -569,7 +569,7 @@ TEST(ExactAssemblyScope_Close_64) {
   aarch64::MacroAssembler masm;
 
   {
-    CodeBufferCheckScope scope(&masm, aarch64::kInstructionSize);
+    ExactAssemblyScope scope(&masm, aarch64::kInstructionSize);
     __ movz(aarch64::x0, 0);
     scope.Close();
     __ Mov(aarch64::x1, 1);
@@ -621,18 +621,28 @@ TEST_A32(ExactAssemblyScope_32) {
   aarch32::MacroAssembler masm;
 
   // By default macro instructions are allowed.
+  VIXL_CHECK(!masm.ArePoolsBlocked());
+  VIXL_ASSERT(!masm.AllowAssembler());
   VIXL_ASSERT(masm.AllowMacroInstructions());
   {
     ExactAssemblyScope scope1(&masm, 2 * aarch32::kA32InstructionSizeInBytes);
+    VIXL_CHECK(masm.ArePoolsBlocked());
+    VIXL_ASSERT(masm.AllowAssembler());
     VIXL_ASSERT(!masm.AllowMacroInstructions());
     __ nop();
     {
       ExactAssemblyScope scope2(&masm, 1 * aarch32::kA32InstructionSizeInBytes);
+      VIXL_CHECK(masm.ArePoolsBlocked());
+      VIXL_ASSERT(masm.AllowAssembler());
       VIXL_ASSERT(!masm.AllowMacroInstructions());
       __ nop();
     }
+    VIXL_CHECK(masm.ArePoolsBlocked());
+    VIXL_ASSERT(masm.AllowAssembler());
     VIXL_ASSERT(!masm.AllowMacroInstructions());
   }
+  VIXL_CHECK(!masm.ArePoolsBlocked());
+  VIXL_ASSERT(!masm.AllowAssembler());
   VIXL_ASSERT(masm.AllowMacroInstructions());
 
   {
@@ -651,18 +661,28 @@ TEST(ExactAssemblyScope_64) {
   aarch64::MacroAssembler masm;
 
   // By default macro instructions are allowed.
+  VIXL_CHECK(!masm.ArePoolsBlocked());
+  VIXL_ASSERT(!masm.AllowAssembler());
   VIXL_ASSERT(masm.AllowMacroInstructions());
   {
     ExactAssemblyScope scope1(&masm, 2 * aarch64::kInstructionSize);
+    VIXL_CHECK(masm.ArePoolsBlocked());
+    VIXL_ASSERT(masm.AllowAssembler());
     VIXL_ASSERT(!masm.AllowMacroInstructions());
     __ nop();
     {
       ExactAssemblyScope scope2(&masm, 1 * aarch64::kInstructionSize);
+      VIXL_CHECK(masm.ArePoolsBlocked());
+      VIXL_ASSERT(masm.AllowAssembler());
       VIXL_ASSERT(!masm.AllowMacroInstructions());
       __ nop();
     }
+    VIXL_CHECK(masm.ArePoolsBlocked());
+    VIXL_ASSERT(masm.AllowAssembler());
     VIXL_ASSERT(!masm.AllowMacroInstructions());
   }
+  VIXL_CHECK(!masm.ArePoolsBlocked());
+  VIXL_ASSERT(!masm.AllowAssembler());
   VIXL_ASSERT(masm.AllowMacroInstructions());
 
   {
@@ -692,7 +712,8 @@ TEST_A32(ExactAssemblyScope_scope_with_pools_32) {
     // The literal pool should be generated when opening this scope, as
     // otherwise the `Ldrd` will run out of range when we generate the `nop`
     // instructions below.
-    ExactAssemblyScope scope(&masm, n_nops * aarch32::kA32InstructionSizeInBytes);
+    ExactAssemblyScope scope(&masm,
+                             n_nops * aarch32::kA32InstructionSizeInBytes);
 
     // Although it must be, we do not check that the literal pool size is zero
     // here, because we want this regression test to fail while or after we
@@ -745,4 +766,3 @@ TEST(ExactAssemblyScope_scope_with_pools_64) {
 
 
 }  // namespace vixl
-
