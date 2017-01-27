@@ -576,7 +576,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
                  PositionIndependentCodeOption pic = PositionIndependentCode);
   ~MacroAssembler();
 
-  virtual internal::AssemblerBase* AsAssemblerBase() VIXL_OVERRIDE {
+  virtual vixl::internal::AssemblerBase* AsAssemblerBase() VIXL_OVERRIDE {
     return this;
   }
 
@@ -1304,7 +1304,7 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
     SingleEmissionCheckScope guard(this);
     fminnm(vd, vn, vm);
   }
-  void Fmov(VRegister vd, VRegister vn) {
+  void Fmov(const VRegister& vd, const VRegister& vn) {
     VIXL_ASSERT(allow_macro_instructions_);
     SingleEmissionCheckScope guard(this);
     // Only emit an instruction if vd and vn are different, and they are both D
@@ -1315,11 +1315,17 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
       fmov(vd, vn);
     }
   }
-  void Fmov(VRegister vd, Register rn) {
+  void Fmov(const VRegister& vd, const Register& rn) {
     VIXL_ASSERT(allow_macro_instructions_);
     VIXL_ASSERT(!rn.IsZero());
     SingleEmissionCheckScope guard(this);
     fmov(vd, rn);
+  }
+  void Fmov(const VRegister& vd, const XRegister& xn) {
+    Fmov(vd, Register(xn));
+  }
+  void Fmov(const VRegister& vd, const WRegister& wn) {
+    Fmov(vd, Register(wn));
   }
   void Fmov(const VRegister& vd, int index, const Register& rn) {
     VIXL_ASSERT(allow_macro_instructions_);
@@ -2833,12 +2839,12 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   // one instruction. Refer to the implementation for details.
   void BumpSystemStackPointer(const Operand& space);
 
-  virtual void SetAllowMacroInstructions(bool value) VIXL_OVERRIDE {
-    allow_macro_instructions_ = value;
-  }
-
   virtual bool AllowMacroInstructions() const VIXL_OVERRIDE {
     return allow_macro_instructions_;
+  }
+
+  virtual bool ArePoolsBlocked() const VIXL_OVERRIDE {
+    return IsLiteralPoolBlocked() && IsVeneerPoolBlocked();
   }
 
   void SetGenerateSimulatorCode(bool value) {
@@ -2846,23 +2852,6 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
   }
 
   bool GenerateSimulatorCode() const { return generate_simulator_code_; }
-
-  void BlockLiteralPool() { literal_pool_.Block(); }
-  void ReleaseLiteralPool() { literal_pool_.Release(); }
-  bool IsLiteralPoolBlocked() const { return literal_pool_.IsBlocked(); }
-  void BlockVeneerPool() { veneer_pool_.Block(); }
-  void ReleaseVeneerPool() { veneer_pool_.Release(); }
-  bool IsVeneerPoolBlocked() const { return veneer_pool_.IsBlocked(); }
-
-  virtual void BlockPools() VIXL_OVERRIDE {
-    BlockLiteralPool();
-    BlockVeneerPool();
-  }
-
-  virtual void ReleasePools() VIXL_OVERRIDE {
-    ReleaseLiteralPool();
-    ReleaseVeneerPool();
-  }
 
   size_t GetLiteralPoolSize() const { return literal_pool_.GetSize(); }
   VIXL_DEPRECATED("GetLiteralPoolSize", size_t LiteralPoolSize() const) {
@@ -3037,6 +3026,34 @@ class MacroAssembler : public Assembler, public MacroAssemblerInterface {
 #endif  // #ifdef VIXL_HAS_MACROASSEMBLER_RUNTIME_CALL_SUPPORT
 
  protected:
+  void BlockLiteralPool() { literal_pool_.Block(); }
+  void ReleaseLiteralPool() { literal_pool_.Release(); }
+  bool IsLiteralPoolBlocked() const { return literal_pool_.IsBlocked(); }
+  void BlockVeneerPool() { veneer_pool_.Block(); }
+  void ReleaseVeneerPool() { veneer_pool_.Release(); }
+  bool IsVeneerPoolBlocked() const { return veneer_pool_.IsBlocked(); }
+
+  virtual void BlockPools() VIXL_OVERRIDE {
+    BlockLiteralPool();
+    BlockVeneerPool();
+  }
+
+  virtual void ReleasePools() VIXL_OVERRIDE {
+    ReleaseLiteralPool();
+    ReleaseVeneerPool();
+  }
+
+  // The scopes below need to able to block and release a particular pool.
+  // TODO: Consider removing those scopes or move them to
+  // code-generation-scopes-vixl.h.
+  friend class BlockPoolsScope;
+  friend class BlockLiteralPoolScope;
+  friend class BlockVeneerPoolScope;
+
+  virtual void SetAllowMacroInstructions(bool value) VIXL_OVERRIDE {
+    allow_macro_instructions_ = value;
+  }
+
   // Helper used to query information about code generation and to generate
   // code for `csel`.
   // Here and for the related helpers below:
