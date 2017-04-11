@@ -2697,7 +2697,7 @@ void UseScratchRegisterScope::Release(const CPURegister& reg) {
   VIXL_ASSERT(masm_ != NULL);
   if (reg.IsRegister()) {
     ReleaseByCode(masm_->GetScratchRegisterList(), reg.GetCode());
-  } else if (reg.IsFPRegister()) {
+  } else if (reg.IsVRegister()) {
     ReleaseByCode(masm_->GetScratchFPRegisterList(), reg.GetCode());
   } else {
     VIXL_ASSERT(reg.IsNone());
