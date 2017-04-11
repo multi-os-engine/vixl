@@ -23276,6 +23276,25 @@ TEST(nop) {
   masm.FinalizeCode();
 }
 
+TEST(scratch_scope_basic_v) {
+  MacroAssembler masm;
+
+  {
+    UseScratchRegisterScope temps(&masm);
+    VRegister temp = temps.AcquireVRegisterOfSize(kQRegSize);
+    VIXL_CHECK(temp.Aliases(v31));
+  }
+  {
+    UseScratchRegisterScope temps(&masm);
+    VRegister temp = temps.AcquireVRegisterOfSize(kDRegSize);
+    VIXL_CHECK(temp.Aliases(v31));
+  }
+  {
+    UseScratchRegisterScope temps(&masm);
+    VRegister temp = temps.AcquireVRegisterOfSize(kSRegSize);
+    VIXL_CHECK(temp.Aliases(v31));
+  }
+}
 
 TEST(static_register_types) {
   SETUP();
