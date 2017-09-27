@@ -54,7 +54,6 @@
 cc_defaults {
     name: "vixl-common",
     host_supported: true,
-    clang: true,
     srcs: ["src/*.cc"],
     clang_cflags: ["-Wimplicit-fallthrough"],
     cppflags: [
