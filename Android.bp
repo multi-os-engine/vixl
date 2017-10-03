@@ -165,7 +165,7 @@ cc_binary_host {
     ],
     enabled: false,
     target: {
-        linux_x86_64: {
+        linux_glibc_x86_64: {
             enabled: true,
         },
     },
