@@ -56,11 +56,13 @@ cc_defaults {
     host_supported: true,
     srcs: ["src/*.cc"],
     clang_cflags: ["-Wimplicit-fallthrough"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
     cppflags: [
         "-DVIXL_GENERATE_SIMULATOR_INSTRUCTIONS_VALUE=0",
-        "-Wall",
         "-Wextra",
-        "-Werror",
         "-fdiagnostics-show-option",
         "-Wredundant-decls",
         "-Wunreachable-code",
