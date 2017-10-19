@@ -155,15 +155,18 @@ cc_library {
 // We only support 64bit host builds for now.
 // To run all the tests: vixl-test-runner --run_all
 //
-cc_binary_host {
+cc_test_host {
     name: "vixl-test-runner",
-    static_executable: true,
+    gtest: false,
     defaults: ["vixl-debug", "vixl-arm", "vixl-arm64"],
     local_include_dirs: ["test"],
     srcs: [
         "test/*.cc",
         "test/aarch32/*.cc",
         "test/aarch64/*.cc",
+    ],
+    data: [
+        "test/test-trace-reference/*",
     ],
     enabled: false,
     target: {
