@@ -58,8 +58,8 @@ $(vixl_timestamp): $(HOST_OUT_NATIVE_TESTS)/vixl-test-runner/vixl-test-runner
 	# TODO: Once available, use the appropriate option of vixl-test-runner
 	# to point to the trace files instead of running from the vixl root.
 	echo Running vixl tests
-	cd $(dir $<) && $(notdir $<) --run_all
-	cd $(dir $<) && $(notdir $<) --run_all --debugger
+	cd $(dir $<) && ./$(notdir $<) --run_all
+	cd $(dir $<) && ./$(notdir $<) --run_all --debugger
 	echo vixl tests PASSED
 	touch $@
 
