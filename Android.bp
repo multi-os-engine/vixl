@@ -68,7 +68,6 @@ cc_defaults {
         "-Wunreachable-code",
         "-Wmissing-noreturn",
         "-pedantic",
-        "-std=c++11",
 
         // Explicitly enable the write-strings warning. VIXL uses
         // const correctly when handling string constants.
