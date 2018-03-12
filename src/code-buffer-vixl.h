@@ -150,7 +150,10 @@ class CodeBuffer {
 
   bool IsManaged() const { return managed_; }
 
-  void Grow(size_t new_capacity);
+  // Inlining Grow() triggers a miscompile and crashes libart-compiler. Mark it
+  // as noinline to workaround the issue.
+  // http://b/73748308
+  void __attribute__ ((noinline)) Grow(size_t new_capacity);
 
   bool IsDirty() const { return dirty_; }
 
