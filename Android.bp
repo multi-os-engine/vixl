@@ -133,14 +133,7 @@ cc_library {
         instrumentation: true,
         profile_file: "art/dex2oat.profdata",
         benchmarks: ["dex2oat"],
-    },
-    target: {
-        android: {
-            lto: {
-                 thin: true,
-            },
-        },
-    },
+    }
 }
 
 cc_library {
@@ -160,14 +153,7 @@ cc_library {
         instrumentation: true,
         profile_file: "art/dex2oat.profdata",
         benchmarks: ["dex2oat"],
-    },
-    target: {
-        android: {
-            lto: {
-                 thin: true,
-            },
-        },
-    },
+    }
 }
 
 cc_library {
