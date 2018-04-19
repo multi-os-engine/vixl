@@ -123,17 +123,15 @@ cc_defaults {
 
 cc_library {
     name: "libvixl-arm64",
-    defaults: ["vixl-release", "vixl-arm64"],
+    defaults: [
+        "vixl-release",
+        "vixl-arm64",
+        "dex2oat-pgo-defaults",
+    ],
     vendor_available: true,
     vndk: {
         enabled: true,
     },
-
-    pgo: {
-        instrumentation: true,
-        profile_file: "art/dex2oat.profdata",
-        benchmarks: ["dex2oat"],
-    }
 }
 
 cc_library {
@@ -143,17 +141,15 @@ cc_library {
 
 cc_library {
     name: "libvixl-arm",
-    defaults: ["vixl-release", "vixl-arm"],
+    defaults: [
+        "vixl-release",
+        "vixl-arm",
+        "dex2oat-pgo-defaults",
+    ],
     vendor_available: true,
     vndk: {
         enabled: true,
     },
-
-    pgo: {
-        instrumentation: true,
-        profile_file: "art/dex2oat.profdata",
-        benchmarks: ["dex2oat"],
-    }
 }
 
 cc_library {
